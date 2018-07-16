@@ -11,13 +11,13 @@ run: main.o
 	$(CC) Solver.o -o run $(CUDA_LIB) $(C_LIB)
 
 main.o: Solver.cu
-	$(CC) $(CUDA_INC) -c Solver.cu -o Solver.o 
+	$(CC) $(CUDA_INC) -std=c++11 -c Solver.cu -o Solver.o 
 
 test: test.o
 	$(CC) test.o -o runtest $(CUDA_LIB) $(C_LIB)
 
 test.o: test.cu
-	$(CC) $(CUDA_INC) -c test.cu -o test.o -std=c++11
+	$(CC) $(CUDA_INC) -std=c++11 -c test.cu -o test.o -std=c++11
 
 clean:
 	rm -f *.o run runtest

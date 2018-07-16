@@ -17,10 +17,6 @@
 #include "cutil.h"
 #include "cutil_inline_runtime.h"
 
-void print(const char* msg) {
-	std::cout << msg << std::endl;
-}
-
 __global__ 
 void cuDC_init(int *dNe, cufftDoubleComplex* u) {
 	int ind = threadIdx.x + blockIdx.x * blockDim.x;
@@ -178,7 +174,7 @@ void direct_compute_3(  int *dNe, double *dRe, double *dRi, double *ddt,
 };
 
 __global__
-void adjoint_compute_3( int *dNe, double *dRe, double *dRi, double *ddt,
+void adjoint_compute_3( int *dNe, double *dRe, double *ddt,
 						cufftDoubleComplex *uK_n, cufftDoubleComplex *uK_o,
 						cufftDoubleComplex *vK_n, cufftDoubleComplex *vK_o,
 						cufftDoubleComplex *wK_n, cufftDoubleComplex *wK_o,
@@ -201,9 +197,9 @@ void adjoint_compute_3( int *dNe, double *dRe, double *dRi, double *ddt,
 		vestK[ind].y = ((4*vK_n[ind].y - vK_o[ind].y) / (2* *ddt) + 2*nlvK_n[ind].y - nlvK_o[ind].y
 						+ (iky[ind]*pestK[ind].x))/factor;
 		westK[ind].x = ((4*wK_n[ind].x - wK_o[ind].x) / (2* *ddt) + 2*nlwK_n[ind].x - nlwK_o[ind].x
-						+ (-ikz[ind]*pestK[ind].y) - *dRi*bK_o[ind].x)/factor;
+						+ (-ikz[ind]*pestK[ind].y) - bK_o[ind].x)/factor;
 		westK[ind].y = ((4*wK_n[ind].y - wK_o[ind].y) / (2* *ddt) + 2*nlwK_n[ind].y - nlwK_o[ind].y
-						+ (ikz[ind]*pestK[ind].x) + *dRi*bK_o[ind].y)/factor;
+						+ (ikz[ind]*pestK[ind].x) + bK_o[ind].y)/factor;
 		ind+= blockDim.x * gridDim.x;
 	}
 };

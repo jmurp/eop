@@ -24,11 +24,11 @@ void Solver::calc_residual()
 
 	reduce_residual<<<rblocks,nthreads,sizeof(double)*nthreads>>>(dNe, dRi, uK_n, uK_o, vK_n, vK_o, wK_n, wK_o, bK_n, bK_o, d_residual_reduce);
 	cutilSafeCall( cudaMemcpy(residual_reduce, d_residual_reduce, sizeof(double) * rblocks, cudaMemcpyDeviceToHost) );
-	residual = 0.0;
+	grad_residual = 0.0;
 	for (int i = 0; i < rblocks; i++) {
-		residual+= residual_reduce[i];
+		grad_residual+= residual_reduce[i];
 	}
-	residual /= Ne*energy;
+	grad_residual /= Ne*energy;
 };
 
 void Solver::optimize()
@@ -45,13 +45,14 @@ void Solver::optimize()
 	cutilSafeCall( cudaMemcpy(bR_o, bK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToHost) );
 
 	tolerance = 1.0e-6;
-	residual = tolerance + 1;
+	grad_residual = tolerance + 1;
+	energy_residual = tolerance + 1;
 	int its = 0;
 
 	clock_t start, end;
 	double total;
 
-	while (residual > tolerance || its > 0) {
+	while (grad_residual > tolerance || energy_residual > tolerance) {
 
 		//solve direct system, taking IC from uK_n and putting results (real space) to uK_n
 		start = clock();
@@ -71,6 +72,7 @@ void Solver::optimize()
 
 		//calulate new energy after storing old energy, normalize solution and calculate residual
 		calc_energy();
+		energy_residual = abs(energy - energy_o);
 		normalize<<<nblocks,nthreads>>>(dNe, dsqrtenergy, uK_n, vK_n, wK_n, bK_n);
 		calc_residual();
 
@@ -82,10 +84,10 @@ void Solver::optimize()
 
 		std::cout << "\tSOLVER::OPTIMIZE::its = " << ++its << std::endl;
 		std::cout << "\tSOVLER::OPTIMIZE::energy = " << energy << std::endl;
-		std::cout << "\tSOLVER::OPTIMIZE::gradient residual = " << residual << std::endl;
-		std::cout << "\tSOLVER::OPTIMIZE::energy residual = " << abs(energy - energy_o) << std::endl;
+		std::cout << "\tSOLVER::OPTIMIZE::gradient residual = " << grad_residual << std::endl;
+		std::cout << "\tSOLVER::OPTIMIZE::energy residual = " << energy_residual << std::endl;
 
-		if (its > 0) break;
+		if (its > 10) break;
 
 	}
 };

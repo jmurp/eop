@@ -36,7 +36,11 @@ public:
 	void calc_energy();
 	void calc_residual();
 
+	void print(const char*);
+
 private:
+
+	bool verbose = false;
 
 	//cpu
 	bool anynan;
@@ -52,7 +56,8 @@ private:
 	double T,dt;
 
 	double energy, energy_o;
-	double residual;
+	double grad_residual;
+	double energy_residual;
 	double tolerance;
 
 	double *energy_reduce, *residual_reduce;
@@ -193,7 +198,7 @@ void Solver::adjoint_solve()
 		//using device_tmp1 instead of pestK to save memory on GPU (compute 2 and 3)
 		direct_compute_2<<<nblocks,nthreads>>>(dNe, nluK_n, nluK_o, nlvK_n, nlvK_o, nlwK_n, nlwK_o, bK_o, device_tmp1, ikx, iky, ikz);
 
-		adjoint_compute_3<<<nblocks,nthreads>>>(dNe, dRe, dRi, ddt, uK_n, uK_o, vK_n, vK_o, wK_n, wK_o, nluK_n,
+		adjoint_compute_3<<<nblocks,nthreads>>>(dNe, dRe, ddt, uK_n, uK_o, vK_n, vK_o, wK_n, wK_o, nluK_n,
 												nluK_o, nlvK_n, nlvK_o, nlwK_n, nlwK_o, device_tmp1, bK_o,
 												ikx, iky, ikz, uestK, vestK, westK);
 
@@ -213,6 +218,8 @@ void Solver::adjoint_solve()
 		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nluK_n);
 		//setup nluK_n for next time step
 
+		cufftSafeCall( cufftExecZ2Z(plan, device_tmp1, device_tmp1, CUFFT_INVERSE) );
+		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
 		full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, Uy, device_tmp2);
 		kx_scal<<<nblocks,nthreads>>>(dNe, vK_n, ikx, device_tmp1);
 		cufftSafeCall( cufftExecZ2Z(plan, device_tmp1, device_tmp1, CUFFT_INVERSE) );
@@ -343,21 +350,21 @@ Solver::Solver( int blocks, int threads,
 	int i;
 	for (i = 0; i < Nx; i++) {
 		xx[i] = (2.0*PI*Lx/Nx) * (-Nx/2 + i);
-		if (i < Nx/2) kxx[i] = i;
+		if (i < Nx/2) kxx[i] = i/Lx;
 		else if (i == Nx/2) kxx[i] = 0.0;
-		else if (i > Nx/2) kxx[i] = i-Nx;
+		else if (i > Nx/2) kxx[i] = (i-Nx)/Lx;
 	}
 	for (i = 0; i < Ny; i++) {
 		yy[i] = (2.0*PI*Ly/Ny) * (-Ny/2 + i);
-		if (i < Ny/2) kyy[i] = i;
+		if (i < Ny/2) kyy[i] = i/Ly;
 		else if (i == Ny/2) kyy[i] = 0.0;
-		else if (i > Ny/2) kyy[i] = i-Ny;
+		else if (i > Ny/2) kyy[i] = (i-Ny)/Ly;
 	}
 	for (i = 0; i < Nz; i++) {
 		zz[i] = (2.0*PI*Lz/Nz) * (-Nz/2 + i);
-		if (i < Nz/2) kzz[i] = i;
+		if (i < Nz/2) kzz[i] = i/Lz;
 		else if (i == Nz/2) kzz[i] = 0.0;
-		else if (i > Nz/2) kzz[i] = i-Nz;
+		else if (i > Nz/2) kzz[i] = (i-Nz)/Lz;
 	}
 
 	cutilSafeCall( cudaMemcpy(dkx, kxx, sizeof(double) * Nx, cudaMemcpyHostToDevice) );
@@ -521,7 +528,7 @@ void Solver::direct_set_IC()
 
 	print("\tBEGIN_SOLVER::DIRECT_SET_IC");
 
-	cutilSafeCall( cudaMemcpy(vK_n, device_tmp1, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
+	cutilSafeCall( cudaMemcpy(device_tmp1, vK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
 	full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, Uy, device_tmp1);
 	cufftSafeCall( cufftExecZ2Z(plan, uK_n, uK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, uK_n);
@@ -583,7 +590,7 @@ void Solver::adjoint_set_IC()
 {
 	print("\tBEGIN_SOLVER::ADJOINT_SET_IC");
 
-	cutilSafeCall( cudaMemcpy(uK_n, device_tmp1, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
+	cutilSafeCall( cudaMemcpy(device_tmp1, uK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
 	full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, Uy, device_tmp1);
 	cufftSafeCall( cufftExecZ2Z(plan, vK_n, vK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, vK_n);
@@ -722,6 +729,11 @@ void Solver::checkNanAll(const char * msg)
 	checkNan("vestK",vestK);
 	checkNan("westK",westK);
 };
+
+void Solver::print(const char* msg) {
+	if (!verbose) return;
+	std::cout << msg << std::endl;
+}
 
 
 #endif //SOLVER_H
