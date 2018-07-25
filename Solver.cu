@@ -49,30 +49,32 @@ void Solver::optimize()
 	energy_residual = tolerance + 1;
 	int its = 0;
 
-	clock_t start, end;
-	double total;
+	clock_t optimize_start, optimize_end;
+	clock_t solver_start, solver_end;
+	double direct_time = 0.0;
+	double adjoint_time = 0.0; 
+	double optimize_time = 0.0;
 
-	while (grad_residual > tolerance || energy_residual > tolerance) {
+	optimize_start = clock();
+	while (grad_residual > tolerance) {
 
 		//solve direct system, taking IC from uK_n and putting results (real space) to uK_n
-		start = clock();
+		solver_start = clock();
 		direct_solve();
-		end = clock();
-		total = (double) (end - start) / CLOCKS_PER_SEC;
-		printf("direct solve took %f seconds\n",total);
+		solver_end = clock();
+		direct_time += (double) (solver_end - solver_start) / CLOCKS_PER_SEC;
 
 		refactor_b<<<nblocks,nthreads>>>(dNe, dRi, bK_n);
 
 		//solve adjoint system, taking IC from uK_n and putting results (real space) to uK_n
-		start = clock();
+		solver_start = clock();
 		adjoint_solve();
-		end = clock();
-		total = (double) (end - start) / CLOCKS_PER_SEC;
-		printf("adjoint solve took %f seconds\n",total);
+		solver_end = clock();
+		adjoint_time += (double) (solver_end - solver_start) / CLOCKS_PER_SEC;
 
 		//calulate new energy after storing old energy, normalize solution and calculate residual
 		calc_energy();
-		energy_residual = abs(energy - energy_o);
+		energy_residual = abs(energy - energy_o) / energy;
 		normalize<<<nblocks,nthreads>>>(dNe, dsqrtenergy, uK_n, vK_n, wK_n, bK_n);
 		calc_residual();
 
@@ -82,14 +84,23 @@ void Solver::optimize()
 		cutilSafeCall( cudaMemcpy(wR_o, wK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToHost) );
 		cutilSafeCall( cudaMemcpy(bR_o, bK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToHost) );
 
-		std::cout << "\tSOLVER::OPTIMIZE::its = " << ++its << std::endl;
-		std::cout << "\tSOVLER::OPTIMIZE::energy = " << energy << std::endl;
-		std::cout << "\tSOLVER::OPTIMIZE::gradient residual = " << grad_residual << std::endl;
-		std::cout << "\tSOLVER::OPTIMIZE::energy residual = " << energy_residual << std::endl;
-
-		if (its > 10) break;
+		Solver::log("\nSOLVER::OPTIMIZE::its = " + std::to_string((++its)));
+		Solver::log("SOLVER::OPTIMIZE::energy = " + std::to_string(energy));
+		Solver::log("SOLVER::OPTIMIZE::gradient residual = " + std::to_string(grad_residual));
+		Solver::log("SOLVER::OPTIMIZE::energy residual = " + std::to_string(energy_residual) + "\n");
 
 	}
+	optimize_end = clock();
+	optimize_time = (double) (optimize_start - optimize_end) / CLOCKS_PER_SEC;
+
+	Solver::log("\nSOLVER::OPTIMIZE::DONE::its = " + std::to_string(its));
+	Solver::log("SOLVER::OPTIMIZE::DONE::energy = " + std::to_string(energy));
+	Solver::log("SOLVER::OPTIMIZE::DONE::gradient_residual = " + std::to_string(grad_residual));
+	Solver::log("SOLVER::OPTIMIZE::DONE::energy residual = " + std::to_string(energy_residual));
+	Solver::log("\nSOLVER::average time for direct_solve() = " + std::to_string(( (double) direct_time / its )));
+	Solver::log("SOLVER::average time for adjoint_solve() = " + std::to_string(( (double) adjoint_time / its )));
+	Solver::log("SOLVER::optimize time elapsed = " + std::to_string(optimize_time));
+
 };
 
 

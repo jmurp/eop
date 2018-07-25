@@ -6,6 +6,7 @@
 
 class Solver {
 
+//only constructor and optimize exposed
 public:
 
 	Solver( int blocks, int threads,
@@ -17,6 +18,11 @@ public:
 	~Solver() {
 		destroy();
 	}
+
+	void optimize();
+
+//member functions
+private:
 
 	void destroy();
 
@@ -31,15 +37,16 @@ public:
 	void checkNan(const char *name,cufftDoubleComplex *v);
 	void checkNanAll(const char *);
 
-	void optimize();
-
 	void calc_energy();
 	void calc_residual();
 
 	void print(const char*);
+	void log(const std::string);
 
+//member variables
 private:
 
+	//printing variable
 	bool verbose = false;
 
 	//cpu
@@ -86,6 +93,8 @@ private:
 	double *d_energy_reduce, *d_residual_reduce;
 
 	double *dsqrtenergy;
+
+	std::ofstream log_file;
 
 };
 
@@ -300,6 +309,14 @@ Solver::Solver( int blocks, int threads,
 	rblocks = Ne / 2 / nthreads + 1;
 	anynan = false;
 
+	//setup log file
+	time_t now;
+	time(&now);
+	std::stringstream ss;
+	ss << now;
+	log_file.open("solver_log_" + ss.str() + ".txt");
+	print("SOLVER::CTOR::log file opened");
+
 	//setup fft plan
 	cufftSafeCall( cufftPlan3d(&plan, Nx, Ny, Nz, CUFFT_Z2Z) );
 	print("SOLVER::CTOR::fft plan initialized");
@@ -457,6 +474,8 @@ Solver::Solver( int blocks, int threads,
 void Solver::destroy() {
 
 	print("BEGIN_SOLVER::DESTROY");
+
+	log_file.close();
 
 	cutilSafeCall( cudaFree(U) );
 	cutilSafeCall( cudaFree(Uy) );
@@ -733,6 +752,10 @@ void Solver::checkNanAll(const char * msg)
 void Solver::print(const char* msg) {
 	if (!verbose) return;
 	std::cout << msg << std::endl;
+}
+
+void Solver::log(const std::string msg) {
+	log_file << msg << std::endl;
 }
 
 

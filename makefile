@@ -20,4 +20,4 @@ test.o: test.cu
 	$(CC) $(CUDA_INC) -std=c++11 -c test.cu -o test.o -std=c++11
 
 clean:
-	rm -f *.o run runtest
+	rm -f *.o run runtest *.txt
