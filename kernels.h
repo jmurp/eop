@@ -25,7 +25,6 @@ void cuDC_init(int *dNe, cufftDoubleComplex* u) {
 	int ind = threadIdx.x + blockIdx.x * blockDim.x;
 	while (ind < *dNe) {
 		u[ind] = (cufftDoubleComplex) make_double2(0.0,0.0);
-		//printf("u.x = %f,  u.y = %f",u[ind].x,u[ind].y);
 		ind+= blockDim.x * gridDim.x;
 	}
 };
@@ -255,12 +254,9 @@ void check_nan(int *dNe, cufftDoubleComplex *u, bool *danynan)
 {
 	int ind = threadIdx.x + blockIdx.x * blockDim.x;
 	while (ind < *dNe) {
-		//if (u[ind].x != u[ind].x || u[ind].y != u[ind].y) *danynan = true;
 		if (isnan(u[ind].x) || isnan(u[ind].y)) {
-			//printf("check_nan found nan at index %d",ind);
 			*danynan = true;
 		}
-		//else printf("*danynan = %d",*danynan);
 		ind+= blockDim.x * gridDim.x;
 	}
 };
@@ -326,7 +322,6 @@ void reduce_energy( int *dNe, double *dRi,
 
 	if (tid == 0)  {
 		d_energy_reduce[blockIdx.x] = sdata[0];
-		//printf("blockIdx.x = %d,\t just added %f to energy array\n",blockIdx.x,sdata[0]);
 	}
 };
 
@@ -410,7 +405,6 @@ __global__
 void init_IC(int *dNe, double *ix, double *iy, double *iz,
 				cufftDoubleComplex *u, cufftDoubleComplex *v, cufftDoubleComplex *w, cufftDoubleComplex *b)
 {
-	//printf("blockIdx.x = %d, threadIdx.x = %d\n",blockIdx.x,threadIdx.x);
 	int ind = threadIdx.x + blockIdx.x * blockDim.x;
 	while (ind < *dNe) {
 		u[ind] = (cufftDoubleComplex) make_double2(2.0/sqrt(3.0)*sin(2.0*PI/3.0)*sin(ix[ind])*cos(iy[ind])*cos(iz[ind]),0.0);
