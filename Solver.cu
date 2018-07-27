@@ -33,6 +33,8 @@ void Solver::calc_residual()
 
 void Solver::optimize()
 {
+	log_begin_optimize();
+
 	init_IC<<<nblocks,nthreads>>>(dNe, ix, iy, iz, uK_n, vK_n, wK_n, bK_n);
 	//calculates the energy of the solution (uK_n,vK_n,wK_n,bK_n) and normalize it
 	energy = 0.0;
@@ -91,15 +93,15 @@ void Solver::optimize()
 
 	}
 	optimize_end = clock();
-	optimize_time = (double) (optimize_start - optimize_end) / CLOCKS_PER_SEC;
+	optimize_time = (double) (optimize_end - optimize_start) / CLOCKS_PER_SEC;
 
 	Solver::log("\nSOLVER::OPTIMIZE::DONE::its = " + std::to_string(its));
 	Solver::log("SOLVER::OPTIMIZE::DONE::energy = " + std::to_string(energy));
 	Solver::log("SOLVER::OPTIMIZE::DONE::gradient_residual = " + std::to_string(grad_residual));
 	Solver::log("SOLVER::OPTIMIZE::DONE::energy residual = " + std::to_string(energy_residual));
-	Solver::log("\nSOLVER::average time for direct_solve() = " + std::to_string(( (double) direct_time / its )));
-	Solver::log("SOLVER::average time for adjoint_solve() = " + std::to_string(( (double) adjoint_time / its )));
-	Solver::log("SOLVER::optimize time elapsed = " + std::to_string(optimize_time));
+	Solver::log("\n\tSOLVER::average time for direct_solve() = " + std::to_string(( (double) direct_time / its )));
+	Solver::log("\tSOLVER::average time for adjoint_solve() = " + std::to_string(( (double) adjoint_time / its )));
+	Solver::log("\tSOLVER::optimize time elapsed = " + std::to_string(optimize_time));
 
 };
 
@@ -121,6 +123,10 @@ int main() {
 	double dt = 0.01;
 
 	Solver solver(nblocks,nthreads,Nx,Ny,Nz,Lx,Ly,Lz,Re,Ri,Pr,T,dt);
+
+	solver.optimize();
+
+	solver.reset(nblocks,nthreads,32,Ny,Nz,Lx,Ly,Lz,180.0,Ri,Pr,T,dt);
 
 	solver.optimize();
 
