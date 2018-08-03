@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <time.h>
+#include <ctime>
 //cuda
 #include <vector_types.h>
 #include <vector_functions.h>
@@ -306,10 +306,10 @@ void reduce_energy( int *dNe, double *dRi,
 	int tid = threadIdx.x;
 	int ind = threadIdx.x + blockIdx.x * blockDim.x * 2;
 	if (ind < *dNe) {
-		sdata[tid] = 0.5*(u[ind].x*u[ind].x + v[ind].x*v[ind].x + w[ind].x*w[ind].x + b[ind].x*b[ind].x/ *dRi);
+		sdata[tid] = u[ind].x*u[ind].x + v[ind].x*v[ind].x + w[ind].x*w[ind].x + (b[ind].x*b[ind].x * *dRi);
 		if (ind + blockDim.x < *dNe) {
 			int ind2 = ind + blockDim.x;
-			sdata[tid] += 0.5*(u[ind2].x*u[ind2].x + v[ind2].x*v[ind2].x + w[ind2].x*w[ind2].x + b[ind2].x*b[ind2].x/ *dRi);
+			sdata[tid] += u[ind2].x*u[ind2].x + v[ind2].x*v[ind2].x + w[ind2].x*w[ind2].x + (b[ind2].x*b[ind2].x * *dRi);
 		}
 	}
 	else sdata[tid] = 0.0;
@@ -322,6 +322,108 @@ void reduce_energy( int *dNe, double *dRi,
 
 	if (tid == 0)  {
 		d_energy_reduce[blockIdx.x] = sdata[0];
+	}
+};
+
+__global__
+void reduce_kinetic(int *dNe, cufftDoubleComplex *u, cufftDoubleComplex *v,
+					cufftDoubleComplex *w, double *reduce_array)
+{
+	extern __shared__ double sdata[];
+	int tid = threadIdx.x;
+	int ind = threadIdx.x + blockIdx.x * blockDim.x * 2;
+	if (ind < *dNe) {
+		sdata[tid] = u[ind].x * u[ind].x + v[ind].x * v[ind].x + w[ind].x * w[ind].x;
+		if (ind + blockDim.x < *dNe) {
+			int ind2 = ind + blockDim.x;
+			sdata[tid] += u[ind2].x * u[ind2].x + v[ind2].x * v[ind2].x + w[ind2].x * w[ind2].x;
+		}
+	}
+	else sdata[tid] = 0.0;
+	__syncthreads();
+
+	for (unsigned int s = blockDim.x/2; s > 0; s >>= 1) {
+		if (tid < s) sdata[tid]+= sdata[tid + s];
+		__syncthreads();
+	}
+
+	if (tid == 0) {
+		reduce_array[blockIdx.x] = sdata[0];
+	}
+};
+
+__global__
+void reduce_potential(int *dNe, cufftDoubleComplex *b, double *reduce_array)
+{
+	extern __shared__ double sdata[];
+	int tid = threadIdx.x;
+	int ind = threadIdx.x + blockIdx.x * blockDim.x * 2;
+	if (ind < *dNe) {
+		sdata[tid] = b[ind].x * b[ind].x;
+		if (ind + blockDim.x < *dNe) {
+			sdata[tid] += b[ind + blockDim.x].x * b[ind + blockDim.x].x;
+		}
+	}
+	else sdata[tid] = 0.0;
+	__syncthreads();
+
+	for (unsigned int s = blockDim.x/2; s > 0; s >>= 1) {
+		if (tid < s) sdata[tid]+= sdata[tid + s];
+		__syncthreads();
+	}
+
+	if (tid == 0) {
+		reduce_array[blockIdx.x] = sdata[0];
+	}
+};
+
+__global__
+void reduce_uwUy(int *dNe, cufftDoubleComplex *u, cufftDoubleComplex *w, cufftDoubleComplex *Uy, double *reduce_array)
+{
+	extern __shared__ double sdata[];
+	int tid = threadIdx.x;
+	int ind = threadIdx.x + blockIdx.x * blockDim.x * 2;
+	if (ind < *dNe) {
+		sdata[tid] = u[ind].x * w[ind].x * Uy[ind].x;
+		if (ind + blockDim.x < *dNe) {
+			sdata[tid] += u[ind + blockDim.x].x * w[ind + blockDim.x].x * Uy[ind + blockDim.x].x;
+		}
+	}
+	else sdata[tid] = 0.0;
+	__syncthreads();
+
+	for (unsigned int s = blockDim.x/2; s > 0; s >>= 1) {
+		if (tid < s) sdata[tid]+= sdata[tid + s];
+		__syncthreads();
+	}
+
+	if (tid == 0) {
+		reduce_array[blockIdx.x] = sdata[0];
+	}
+};
+
+__global__
+void reduce_wb(int *dNe, cufftDoubleComplex *w, cufftDoubleComplex *b, double *reduce_array)
+{
+	extern __shared__ double sdata[];
+	int tid = threadIdx.x;
+	int ind = threadIdx.x + blockIdx.x * blockDim.x * 2;
+	if (ind < *dNe) {
+		sdata[tid] = w[ind].x * b[ind].x;
+		if (ind + blockDim.x < *dNe) {
+			sdata[tid] += w[ind + blockDim.x].x * b[ind + blockDim.x].x;
+		}
+	}
+	else sdata[tid] = 0.0;
+	__syncthreads();
+
+	for (unsigned int s = blockDim.x/2; s > 0; s >>= 1) {
+		if (tid < s) sdata[tid]+= sdata[tid + s];
+		__syncthreads();
+	}
+
+	if (tid == 0) {
+		reduce_array[blockIdx.x] = sdata[0];
 	}
 };
 

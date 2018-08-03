@@ -17,7 +17,10 @@ test: test.o
 	$(CC) test.o -o runtest $(CUDA_LIB) $(C_LIB)
 
 test.o: test.cu
-	$(CC) $(CUDA_INC) -std=c++11 -c test.cu -o test.o -std=c++11
+	$(CC) $(CUDA_INC) -std=c++11 -c test.cu -o test.o
 
 clean:
-	rm -f *.o run runtest *.txt
+	rm -f *.o run runtest
+
+realclean: clean
+	rm -rf ./log/*.txt ./data/*.txt

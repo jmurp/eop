@@ -7,10 +7,8 @@ void Solver::calc_energy()
 	cutilSafeCall( cudaMemcpy(energy_reduce, d_energy_reduce, sizeof(double) * rblocks, cudaMemcpyDeviceToHost) );
 	energy_o = energy;
 	energy = 0.0;
-	for (int i = 0; i < rblocks; i++) {
-		energy+= energy_reduce[i];
-	}
-	energy /= Ne;
+	for (int i = 0; i < rblocks; i++) energy+= energy_reduce[i];
+	energy *= (0.5 / Ne);
 	double sqrtenergy = sqrt(energy);
 	cutilSafeCall( cudaMemcpy(dsqrtenergy, &sqrtenergy, sizeof(double), cudaMemcpyHostToDevice) );
 };
@@ -34,6 +32,7 @@ void Solver::calc_residual()
 void Solver::optimize()
 {
 	log_begin_optimize();
+	init_data_files();
 
 	init_IC<<<nblocks,nthreads>>>(dNe, ix, iy, iz, uK_n, vK_n, wK_n, bK_n);
 	//calculates the energy of the solution (uK_n,vK_n,wK_n,bK_n) and normalize it
@@ -65,6 +64,9 @@ void Solver::optimize()
 		direct_solve();
 		solver_end = clock();
 		direct_time += (double) (solver_end - solver_start) / CLOCKS_PER_SEC;
+
+		//store gain, kinetic, potential
+		write_to_data_files();
 
 		refactor_b<<<nblocks,nthreads>>>(dNe, dRi, bK_n);
 
@@ -103,10 +105,14 @@ void Solver::optimize()
 	Solver::log("\tSOLVER::average time for adjoint_solve() = " + std::to_string(( (double) adjoint_time / its )));
 	Solver::log("\tSOLVER::optimize time elapsed = " + std::to_string(optimize_time));
 
+	close_data_files();
+
 };
 
 
 int main() {
+
+	double Ly_arr[3] = {2.0, 4.0, 6.0};
 
 	int nblocks = 128;
 	int nthreads = 512;
@@ -116,20 +122,20 @@ int main() {
 	double Lx = 2.0;
 	double Ly = 4.0;
 	double Lz = 2.0;
-	double Re = 200.0;
+	double Re = 100.0;
 	double Ri = 1.0;
 	double Pr = 1.0;
 	double T = 1.0;
 	double dt = 0.01;
 
-	Solver solver(nblocks,nthreads,Nx,Ny,Nz,Lx,Ly,Lz,Re,Ri,Pr,T,dt);
+	Solver solver(nblocks,nthreads,Nx,Ny,Nz,Lx,Ly_arr[0],Lz,Re,Ri,Pr,T,dt);
 
-	solver.optimize();
+	for (int i = 0; i < 3; i++) {
 
-	solver.reset(nblocks,nthreads,32,Ny,Nz,Lx,Ly,Lz,180.0,Ri,Pr,T,dt);
+		solver.optimize();
 
-	solver.optimize();
-
+		if (i != 2) solver.reset(nblocks,nthreads,Nx,Ny,Nz,Lx,Ly_arr[i+1],Lz,Re,Ri,Pr,T,dt);
+	}
 
 };
 

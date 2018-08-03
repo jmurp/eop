@@ -33,57 +33,46 @@ public:
 //member functions
 private:
 
-	void destroy(bool close_log);
+	void destroy(bool from_destructor);
 	void set(int blocks, int threads,
 			int nx, int ny, int nz,
 			double lx, double ly, double lz,
 			double re, double ri, double pr,
-			double t, double delt,bool new_log);
-
+			double t, double delt,bool from_constructor);
 
 	void direct_solve();
 	void adjoint_solve();
-
 	void direct_set_IC();
 	void adjoint_set_IC();
-
 	void swap_solver_pointers();
-
 	void checkNan(const char *name,cufftDoubleComplex *v);
 	void checkNanAll(const char *);
-
 	void calc_energy();
 	void calc_residual();
+	void write_to_data_files();
 
 	void print(const char*);
 	void log(const std::string);
 	void log_begin_optimize();
+	void init_data_files();
+	void close_data_files();
 
 //member variables
-private:
-
-	//printing variable
-	bool verbose = false;
 
 	//cpu
 	bool anynan;
 	int nblocks, nthreads;
 	int rblocks;//for reduction kernels
-
 	cufftHandle plan;
-
 	int Nx,Ny,Nz,Ne;
 	double Lx,Ly,Lz;
 	double Re,Ri,Pr;
 	double T,dt;
-
 	double energy, energy_o;
 	double grad_residual;
 	double energy_residual;
 	double tolerance;
-
 	double *energy_reduce, *residual_reduce;
-
 	cufftDoubleComplex *uR_o, *vR_o, *wR_o, *bR_o;
 
 	//gpu
@@ -93,34 +82,32 @@ private:
 	double *dRe,*dRi,*dPr;
 	double *dLy;
 	double *ddt;
-
 	cufftDoubleComplex *U,*Uy;
 	cufftDoubleComplex *uK_o,*uK_n,*vK_o,*vK_n,*wK_o,*wK_n,*bK_o,*bK_n;
 	cufftDoubleComplex *nluK_o,*nluK_n,*nlvK_n,*nlvK_o,*nlwK_n,*nlwK_o,*nlbK_o,*nlbK_n;
 	cufftDoubleComplex *uestK,*vestK,*westK;
-
 	double *ix, *iy, *iz;
 	double *ikx,*iky,*ikz;
-
 	cufftDoubleComplex *device_tmp1;
 	cufftDoubleComplex *device_tmp2;
-
 	double *d_energy_reduce, *d_residual_reduce;
-
 	double *dsqrtenergy;
 
+	//output
+	bool verbose = true;//logging on/off
+	char time_stamp[20];
+	int optimize_count;
 	std::ofstream log_file;
+	std::ofstream gain_data_file;
+	std::ofstream kinetic_data_file;
+	std::ofstream potential_data_file;
+	std::ofstream uwUy_data_file;
+	std::ofstream wb_data_file;
 
 };
 
 void Solver::direct_solve()
-//solver uses u_n, v_n, w_n, b_n
-//in place of uK_n, vK_n, wK_n, bK_n
-//in order to save memory
 {
-
-
-	print("BEGIN_SOLVER::DIRECT_SOLVE");
 
 	direct_set_IC();
 
@@ -188,28 +175,24 @@ void Solver::direct_solve()
 
 	cufftSafeCall( cufftExecZ2Z(plan, uK_n, uK_n, CUFFT_INVERSE) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, uK_n);
-	print("\tSOLVER::DIRECT_SOLVER::finished... set uK_n to real space solution");
+	//set uK_n to real space solution
 
 	cufftSafeCall( cufftExecZ2Z(plan, vK_n, vK_n, CUFFT_INVERSE) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, vK_n);
-	print("\tSOLVER::DIRECT_SOLVER::finished... set vK_n to real space solution");
+	//set vK_n to real space solution
 
 	cufftSafeCall( cufftExecZ2Z(plan, wK_n, wK_n, CUFFT_INVERSE) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, wK_n);
-	print("\tSOLVER::DIRECT_SOLVER::finished... set wK_n to real space solution");
+	//set wK_n to real space solution
 
 	cufftSafeCall( cufftExecZ2Z(plan, bK_n, bK_n, CUFFT_INVERSE) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, bK_n);
-	print("\tSOLVER::DIRECT_SOLVER::finished... set bK_n to real space solution");
+	//set bK_n to real space solution
 
-	print("END_SOLVER::DIRECT_SOLVE");
 };
 
 void Solver::adjoint_solve()
 {
-
-
-	print("BEGIN_SOLVER::ADJOINT_SOLVE");
 
 	adjoint_set_IC();
 
@@ -278,22 +261,19 @@ void Solver::adjoint_solve()
 
 	cufftSafeCall( cufftExecZ2Z(plan, uK_n, uK_n, CUFFT_INVERSE) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, uK_n);
-	print("\tSOLVER::ADJOINT_SOLVER::finished... set uK_n to real space solution");
+	//set uK_n to real space solution
 
 	cufftSafeCall( cufftExecZ2Z(plan, vK_n, vK_n, CUFFT_INVERSE) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, vK_n);
-	print("\tSOLVER::ADJOINT_SOLVER::finished... set vK_n to real space solution");
+	//set vK_n to real space solution
 
 	cufftSafeCall( cufftExecZ2Z(plan, wK_n, wK_n, CUFFT_INVERSE) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, wK_n);
-	print("\tSOLVER::ADJOINT_SOLVER::finished... set wK_n to real space solution");
+	//set wK_n to real space solution
 
 	cufftSafeCall( cufftExecZ2Z(plan, bK_n, bK_n, CUFFT_INVERSE) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, bK_n);
-	print("\tSOLVER::ADJOINT_SOLVER::finished... set bK_n to real space solution");
-	//set return values
-
-	print("END_SOLVER::ADJOINT_SOLVE");
+	//set bK_n to real space solution
 
 };
 
@@ -422,10 +402,8 @@ void Solver::set( int blocks, int threads,
 				int nx, int ny, int nz,
 				double lx, double ly, double lz,
 				double re, double ri, double pr,
-				double t, double delt,bool new_log_file)
+				double t, double delt,bool from_constructor)
 {
-
-	print("BEGIN_SOVER::SET");
 
 	nblocks = blocks;
 	nthreads = threads;
@@ -444,20 +422,24 @@ void Solver::set( int blocks, int threads,
 	rblocks = Ne / 2 / nthreads + 1;
 	anynan = false;
 	tolerance = 1.0e-6;
+	//set member variables
 
-	//setup log file
-	if (new_log_file) {
-		time_t now;
-		time(&now);
+
+	if (from_constructor) {
+
+		optimize_count = 0;
+
+		time_t t = time(0);
+		strftime(time_stamp, sizeof(time_stamp), "%Y-%m-%d-%X", gmtime(&t));
 		std::stringstream ss;
-		ss << now;
-		log_file.open("solver_log_" + ss.str() + ".txt");
-		print("SOLVER::SET::log file opened");
+		ss << time_stamp;
+		log_file.open("./log/" + ss.str() + ".txt");
 	}
+	//setup log file
 
-	//setup fft plan
+
 	cufftSafeCall( cufftPlan3d(&plan, Nx, Ny, Nz, CUFFT_Z2Z) );
-	print("SOLVER::SET::fft plan initialized");
+	//setup fft plan
 
 	cutilSafeCall( cudaMalloc( (void**)&dNx, sizeof(int)) );
 	cutilSafeCall( cudaMalloc( (void**)&dNy, sizeof(int)) );
@@ -484,8 +466,7 @@ void Solver::set( int blocks, int threads,
 	cutilSafeCall( cudaMemcpy(dLy, &Ly, sizeof(double), cudaMemcpyHostToDevice) );
 	cutilSafeCall( cudaMemcpy(ddt, &dt, sizeof(double), cudaMemcpyHostToDevice) );
 	cutilSafeCall( cudaMemcpy(danynan, &anynan, sizeof(bool), cudaMemcpyHostToDevice) );
-
-	print("SOLVER::SET::copied single values");
+	//copied single values to GPU memory
 
 	double *kxx,*kyy,*kzz,*dkx,*dky,*dkz;
 	double *xx,*yy,*zz,*dx,*dy,*dz;
@@ -551,10 +532,9 @@ void Solver::set( int blocks, int threads,
 	free(kxx);
 	free(kyy);
 	free(kzz);
+	//grid memory copied GPU
 
-	print("SOLVER::SET::grid memory copied to device");
 
-	//allocation
 	cutilSafeCall( cudaMalloc( (void**)&U, sizeof(cufftDoubleComplex) * Ne) );
 	cutilSafeCall( cudaMalloc( (void**)&Uy, sizeof(cufftDoubleComplex) * Ne) );
 
@@ -594,8 +574,7 @@ void Solver::set( int blocks, int threads,
 	vR_o = (cufftDoubleComplex*) malloc(sizeof(cufftDoubleComplex) * Ne);
 	wR_o = (cufftDoubleComplex*) malloc(sizeof(cufftDoubleComplex) * Ne);
 	bR_o = (cufftDoubleComplex*) malloc(sizeof(cufftDoubleComplex) * Ne);
-
-	print("SOLVER::SET::gpu+cpu memory allocated");
+	//CPU, GPU memory allocated
 
 	init_shear<<<nblocks,nthreads>>>(dNe, dLy, iy, U);
 	cufftSafeCall( cufftExecZ2Z(plan, U, device_tmp1, CUFFT_FORWARD) );
@@ -603,17 +582,13 @@ void Solver::set( int blocks, int threads,
 	ky_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, iky, Uy);
 	cufftSafeCall( cufftExecZ2Z(plan, Uy, Uy, CUFFT_INVERSE) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, Uy);
+	//U, Uy initialized on GPU
 
-	print("SOLVER::SET::U,Uy initialized on device");
-
-	print("END_SOLVER::SET");
 };
 
-void Solver::destroy(bool close_log_file) {
+void Solver::destroy(bool from_destructor) {
 
-	print("BEGIN_SOLVER::DESTROY");
-
-	if (close_log_file)
+	if (from_destructor)
 		log_file.close();
 
 	cutilSafeCall( cudaFree(U) );
@@ -675,16 +650,13 @@ void Solver::destroy(bool close_log_file) {
 	cutilSafeCall( cudaFree(device_tmp2) );
 
 	cufftSafeCall( cufftDestroy(plan) );
-
-	print("END_SOLVER::DESTROY");
+	//memory deallocated
 };
 
 
 
 void Solver::direct_set_IC()
 {
-
-	print("\tBEGIN_SOLVER::DIRECT_SET_IC");
 
 	cutilSafeCall( cudaMemcpy(device_tmp1, vK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
 	full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, Uy, device_tmp1);
@@ -699,7 +671,7 @@ void Solver::direct_set_IC()
 	cufftSafeCall( cufftExecZ2Z(plan, nluK_n, nluK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nluK_n);
 	cutilSafeCall( cudaMemcpy(nluK_o, nluK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
-	print("\t\tSOLVER::DIRECT_SET_IC:: uK_n, uK_o, nluK_n, nluK_o are ready");
+	//uK_n, uK_o, nluK_n, nluK_o are ready
 
 	cufftSafeCall( cufftExecZ2Z(plan, vK_n, vK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, vK_n);
@@ -711,7 +683,7 @@ void Solver::direct_set_IC()
 	cufftSafeCall( cufftExecZ2Z(plan, nlvK_n, nlvK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlvK_n);
 	cutilSafeCall( cudaMemcpy(nlvK_o, nlvK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
-	print("\t\tSOLVER::DIRECT_SET_IC:: vK_n, vK_o, nlvK_n, nlvK_o are ready");
+	//vK_n, vK_o, nlvK_n, nlvK_o are ready
 
 	cufftSafeCall( cufftExecZ2Z(plan, wK_n, wK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, wK_n);
@@ -723,7 +695,7 @@ void Solver::direct_set_IC()
 	cufftSafeCall( cufftExecZ2Z(plan, nlwK_n, nlwK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlwK_n);
 	cutilSafeCall( cudaMemcpy(nlwK_o, nlwK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
-	print("\t\tSOLVER::DIRECT_SET_IC:: wK_n, wK_o, nlwK_n, nlwK_o are ready");
+	//wK_n, wK_o, nlwK_n, nlwK_o are ready
 
 	cufftSafeCall( cufftExecZ2Z(plan, bK_n, bK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, bK_n);
@@ -735,18 +707,16 @@ void Solver::direct_set_IC()
 	cufftSafeCall( cufftExecZ2Z(plan, nlbK_n, nlbK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlbK_n);
 	cutilSafeCall( cudaMemcpy(nlbK_o, nlbK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
-	print("\t\tSOLVER::DIRECT_SET_IC:: bK_n, bK_o, nlbK_n, nlbK_o are ready");
+	//bK_n, bK_o, nlbK_n, nlbK_o are ready
 
 	cuDC_init<<<nblocks,nthreads>>>(dNe, uestK);
 	cuDC_init<<<nblocks,nthreads>>>(dNe, vestK);
 	cuDC_init<<<nblocks,nthreads>>>(dNe, westK);
-	print("\t\tSOLVER::DIRECT_SET_IC:: uestK, vestK, westK are ready");
+	//uestK, vestK, westK are ready
 
-	print("\tEND_SOLVER::DIRECT_SET_IC");
 };
 void Solver::adjoint_set_IC()
 {
-	print("\tBEGIN_SOLVER::ADJOINT_SET_IC");
 
 	cutilSafeCall( cudaMemcpy(device_tmp1, uK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
 	full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, Uy, device_tmp1);
@@ -762,7 +732,7 @@ void Solver::adjoint_set_IC()
 	cufftSafeCall( cufftExecZ2Z(plan, nlvK_n, nlvK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlvK_n);
 	cutilSafeCall( cudaMemcpy(nlvK_o, nlvK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
-	print("\t\tSOLVER::ADJOINT_SET_IC:: vK_n, vK_o, nlvK_n, nlvK_o are ready");
+	//vK_n, vK_o, nlvK_n, nlvK_o are ready
 
 	cufftSafeCall( cufftExecZ2Z(plan, uK_n, uK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, uK_n);
@@ -775,7 +745,7 @@ void Solver::adjoint_set_IC()
 	cufftSafeCall( cufftExecZ2Z(plan, nluK_n, nluK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nluK_n);
 	cutilSafeCall( cudaMemcpy(nluK_o, nluK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
-	print("\t\tSOLVER::ADJOINT_SET_IC:: uK_n, uK_o, nluK_n, nluK_o are ready");
+	//uK_n, uK_o, nluK_n, nluK_o are ready
 
 	cufftSafeCall( cufftExecZ2Z(plan, wK_n, wK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, wK_n);
@@ -788,7 +758,7 @@ void Solver::adjoint_set_IC()
 	cufftSafeCall( cufftExecZ2Z(plan, nlwK_n, nlwK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlwK_n);
 	cutilSafeCall( cudaMemcpy(nlwK_o, nlwK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
-	print("\t\tSOLVER::ADJOINT_SET_IC:: wK_n, wK_o, nlwK_n, nlwK_o are ready");
+	//wK_n, wK_o, nlwK_n, nlwK_o are ready
 
 	cufftSafeCall( cufftExecZ2Z(plan, bK_n, bK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, bK_n);
@@ -801,14 +771,13 @@ void Solver::adjoint_set_IC()
 	cufftSafeCall( cufftExecZ2Z(plan, nlbK_n, nlbK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlbK_n);
 	cutilSafeCall( cudaMemcpy(nlbK_o, nlbK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
-	print("\t\tSOLVER::ADJOINT_SET_IC:: bK_n, bK_o, nlbK_n, nlbK_o are ready");
+	//bK_n, bK_o, nlbK_n, nlbK_o are ready
 
 	cuDC_init<<<nblocks,nthreads>>>(dNe, uestK);
 	cuDC_init<<<nblocks,nthreads>>>(dNe, vestK);
 	cuDC_init<<<nblocks,nthreads>>>(dNe, westK);
-	print("\t\tSOLVER::ADJOINT_SET_IC:: uestK, vestK, westK are ready");
+	//uestK, vestK, westK are ready
 
-	print("\tEND_SOLVER::ADJOINT_SET_IC");
 };
 
 
@@ -891,11 +860,12 @@ void Solver::checkNanAll(const char * msg)
 void Solver::print(const char* msg) {
 	if (!verbose) return;
 	std::cout << msg << std::endl;
-}
+};
 
 void Solver::log(const std::string msg) {
-	log_file << msg << std::endl;
-}
+	if (verbose)
+		log_file << msg << std::endl;
+};
 
 void Solver::log_begin_optimize()
 {
@@ -909,7 +879,81 @@ void Solver::log_begin_optimize()
 	ss << "\tdevice_nblocks = " << nblocks << ", device_nthreads = " << nthreads << std::endl;
 	ss << "\tdevice_rblocks (reduce ops) = " << rblocks << "\n" << std::endl;
 	log(ss.str());
-}
+};
+
+void Solver::init_data_files()
+{
+	std::stringstream ss;
+	ss << time_stamp << "_" << (++optimize_count);
+	std::string flag = ss.str();
+	gain_data_file.open("./data/gain_" + flag + ".txt");
+	kinetic_data_file.open("./data/kinetic_" + flag + ".txt");
+	potential_data_file.open("./data/potential_" + flag + ".txt");
+	uwUy_data_file.open("./data/uwUy_" + flag + ".txt");
+	wb_data_file.open("./data/wb_" + flag + ".txt");
+};
+
+void Solver::close_data_files()
+{
+	gain_data_file.flush();
+	kinetic_data_file.flush();
+	potential_data_file.flush();
+	uwUy_data_file.flush();
+	wb_data_file.flush();
+
+	gain_data_file.close();
+	kinetic_data_file.close();
+	potential_data_file.close();
+	uwUy_data_file.close();
+	wb_data_file.close();
+};
+
+void Solver::write_to_data_files()
+{
+
+	double value;
+
+	//compute gain, write to file
+	reduce_energy<<<rblocks,nthreads,sizeof(double)*nthreads>>>(dNe, dRi, uK_n, vK_n, wK_n, bK_n, d_energy_reduce);
+	cutilSafeCall( cudaMemcpy(energy_reduce, d_energy_reduce, sizeof(double) * rblocks, cudaMemcpyDeviceToHost) );
+	value = 0.0;
+	for (int i = 0; i < rblocks; i++) value+= energy_reduce[i];
+	value *= (0.5 / Ne);
+	gain_data_file << (value / energy) << std::endl;
+
+	//compute kinetic energy, write to file
+	reduce_kinetic<<<rblocks,nthreads,sizeof(double)*nthreads>>>(dNe, uK_n, vK_n, wK_n, d_energy_reduce);
+	cutilSafeCall( cudaMemcpy(energy_reduce, d_energy_reduce, sizeof(double) * rblocks, cudaMemcpyDeviceToHost) );
+	value = 0.0;
+	for (int i = 0; i < rblocks; i++) value+= energy_reduce[i];
+	value *= (0.5 / Ne);
+	kinetic_data_file << (value / energy) << std::endl;
+
+	//compute potential energy, write to file
+	reduce_potential<<<rblocks,nthreads,sizeof(double)*nthreads>>>(dNe, bK_n, d_energy_reduce);
+	cutilSafeCall( cudaMemcpy(energy_reduce, d_energy_reduce, sizeof(double) * rblocks, cudaMemcpyDeviceToHost) );
+	value = 0.0;
+	for (int i = 0; i < rblocks; i++) value+= energy_reduce[i];
+	value *= (Ri * 0.5 / Ne);
+	potential_data_file << (value / energy) << std::endl;
+
+	//compute uwUy value, write to file
+	reduce_uwUy<<<rblocks,nthreads,sizeof(double)*nthreads>>>(dNe, uK_n, wK_n, Uy, d_energy_reduce);
+	cutilSafeCall( cudaMemcpy(energy_reduce, d_energy_reduce, sizeof(double) * rblocks, cudaMemcpyDeviceToHost) );
+	value = 0.0;
+	for (int i = 0; i < rblocks; i++) value+= energy_reduce[i];
+	value *= (-1.0 / Ne);
+	uwUy_data_file << (value / energy) << std::endl;
+
+	//compute wb value, write to file
+	reduce_wb<<<rblocks,nthreads,sizeof(double)*nthreads>>>(dNe, wK_n, bK_n, d_energy_reduce);
+	cutilSafeCall( cudaMemcpy(energy_reduce, d_energy_reduce, sizeof(double) * rblocks, cudaMemcpyDeviceToHost) );
+	value = 0.0;
+	for (int i = 0; i < rblocks; i++) value+= energy_reduce[i];
+	value *= (Ri / Ne);
+	wb_data_file << (value / energy) << std::endl;
+
+};
 
 
 #endif //SOLVER_H
