@@ -24,16 +24,7 @@ void Solver::calc_residual()
 	cutilSafeCall( cudaMemcpy(residual_reduce, d_residual_reduce, sizeof(double) * rblocks, cudaMemcpyDeviceToHost) );
 	grad_residual = 0.0;
 	for (int i = 0; i < rblocks; i++) grad_residual+= residual_reduce[i];
-	reduce_residual_den<<<rblocks,nthreads,sizeof(double)*nthreads>>>(dNe, dRi, uK_n, vK_n, wK_n, bK_n, d_residual_reduce);
-	cutilSafeCall( cudaMemcpy(residual_reduce, d_residual_reduce, sizeof(double) * rblocks, cudaMemcpyDeviceToHost) );
-	double grad_residual_den = 0.0;
-	for (int i = 0; i < rblocks; i++) grad_residual_den+= residual_reduce[i];
-
-	grad_residual /= Ne*energy;//old -> lead to decreasing gradient residual
-	//grad_residual /= grad_residual_den;//new -> gradient residual does not change
-
-	//std::cout << "Ne*energy = " << Ne*energy << std::endl;
-	//std::cout << "grad_residual_den = " << grad_residual_den << std::endl;
+	grad_residual /= Ne*energy;
 };
 
 void Solver::optimize()
@@ -119,7 +110,10 @@ void Solver::optimize()
 
 int main() {
 
-	double Ly_arr[3] = {2.0, 4.0, 6.0};
+	int runs = 30;
+
+	double *Ly_arr = (double*) malloc(sizeof(double) * runs);
+	for (int i = 0; i < runs; i++) Ly_arr[i] = 2.0 + (i * 2.0);
 
 	int nblocks = 128;
 	int nthreads = 512;
@@ -137,12 +131,14 @@ int main() {
 
 	Solver solver(nblocks,nthreads,Nx,Ny,Nz,Lx,Ly_arr[0],Lz,Re,Ri,Pr,T,dt);
 
-	for (int i = 0; i < 3; i++) {
+	for (int i = 0; i < runs; i++) {
 
 		solver.optimize();
 
-		if (i != 2) solver.reset(nblocks,nthreads,Nx,Ny,Nz,Lx,Ly_arr[i+1],Lz,Re,Ri,Pr,T,dt);
+		if (i != (runs-1)) solver.reset(nblocks,nthreads,Nx,Ny,Nz,Lx,Ly_arr[i+1],Lz,Re,Ri,Pr,T,dt);
 	}
+
+	free(Ly_arr);
 
 };
 

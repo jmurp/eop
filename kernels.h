@@ -470,14 +470,14 @@ void reduce_residual(   int *dNe, double *dRi,
 		double val = abs(un[ind].x-uo[ind].x)*abs(un[ind].x-uo[ind].x);
 		val+= abs(vn[ind].x-vo[ind].x)*abs(vn[ind].x-vo[ind].x);
 		val+= abs(wn[ind].x-wo[ind].x)*abs(wn[ind].x-wo[ind].x);
-		val+= abs(bn[ind].x-bo[ind].x)*abs(bn[ind].x-bo[ind].x)/ *dRi;
+		val+= abs(bn[ind].x-bo[ind].x)*abs(bn[ind].x-bo[ind].x) * *dRi;
 		sdata[tid] = val;
 		if (ind + blockDim.x < *dNe) {
 			int ind2 = ind + blockDim.x;
 			val = abs(un[ind2].x-uo[ind2].x)*abs(un[ind2].x-uo[ind2].x);
 			val+= abs(vn[ind2].x-vo[ind2].x)*abs(vn[ind2].x-vo[ind2].x);
 			val+= abs(wn[ind2].x-wo[ind2].x)*abs(wn[ind2].x-wo[ind2].x);
-			val+= abs(bn[ind2].x-bo[ind2].x)*abs(bn[ind2].x-bo[ind2].x)/ *dRi;
+			val+= abs(bn[ind2].x-bo[ind2].x)*abs(bn[ind2].x-bo[ind2].x) * *dRi;
 			sdata[tid] += val;
 		}
 	}
@@ -491,40 +491,6 @@ void reduce_residual(   int *dNe, double *dRi,
 
 	if (tid == 0) d_residual_reduce[blockIdx.x] = sdata[0];
 };
-
-__global__
-void reduce_residual_den(int *dNe, double *dRi, cufftDoubleComplex *un, cufftDoubleComplex *vn,
-							cufftDoubleComplex *wn, cufftDoubleComplex *bn, double *d_residual_reduce)
-{
-	extern __shared__ double sdata[];
-	int tid = threadIdx.x;
-	int ind = threadIdx.x + blockIdx.x * blockDim.x * 2;
-	if (ind < *dNe) {
-		double val = un[ind].x*un[ind].x;
-		val+= vn[ind].x*vn[ind].x;
-		val+= wn[ind].x*wn[ind].x;
-		val+= bn[ind].x*bn[ind].x / *dRi;
-		sdata[tid] = val;
-		if (ind + blockDim.x < *dNe) {
-			int ind2 = ind + blockDim.x;
-			val = un[ind2].x*un[ind2].x;
-			val+= vn[ind2].x*vn[ind2].x;
-			val+= wn[ind2].x*wn[ind2].x;
-			val+= bn[ind2].x*bn[ind2].x / *dRi;
-			sdata[tid] += val;
-		}
-	}
-	else sdata[tid] = 0.0;
-	__syncthreads();
-
-	for (unsigned int s = blockDim.x/2; s > 0; s >>= 1) {
-		if (tid < s) sdata[tid]+= sdata[tid + s];
-		__syncthreads();
-	}
-
-	if (tid == 0) d_residual_reduce[blockIdx.x] = sdata[0];
-};
-
 
 __global__
 void init_shear(int *dNe, double *dLy, double *iy, cufftDoubleComplex *U)
