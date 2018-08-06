@@ -6,7 +6,7 @@
 
 class Solver {
 
-//only constructor and optimize exposed
+//ctor, optimize, reset exposed
 public:
 
 	Solver( int blocks, int threads,

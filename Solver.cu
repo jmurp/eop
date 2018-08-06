@@ -23,10 +23,17 @@ void Solver::calc_residual()
 	reduce_residual<<<rblocks,nthreads,sizeof(double)*nthreads>>>(dNe, dRi, uK_n, uK_o, vK_n, vK_o, wK_n, wK_o, bK_n, bK_o, d_residual_reduce);
 	cutilSafeCall( cudaMemcpy(residual_reduce, d_residual_reduce, sizeof(double) * rblocks, cudaMemcpyDeviceToHost) );
 	grad_residual = 0.0;
-	for (int i = 0; i < rblocks; i++) {
-		grad_residual+= residual_reduce[i];
-	}
-	grad_residual /= Ne*energy;
+	for (int i = 0; i < rblocks; i++) grad_residual+= residual_reduce[i];
+	reduce_residual_den<<<rblocks,nthreads,sizeof(double)*nthreads>>>(dNe, dRi, uK_n, vK_n, wK_n, bK_n, d_residual_reduce);
+	cutilSafeCall( cudaMemcpy(residual_reduce, d_residual_reduce, sizeof(double) * rblocks, cudaMemcpyDeviceToHost) );
+	double grad_residual_den = 0.0;
+	for (int i = 0; i < rblocks; i++) grad_residual_den+= residual_reduce[i];
+
+	grad_residual /= Ne*energy;//old -> lead to decreasing gradient residual
+	//grad_residual /= grad_residual_den;//new -> gradient residual does not change
+
+	//std::cout << "Ne*energy = " << Ne*energy << std::endl;
+	//std::cout << "grad_residual_den = " << grad_residual_den << std::endl;
 };
 
 void Solver::optimize()
@@ -65,7 +72,7 @@ void Solver::optimize()
 		solver_end = clock();
 		direct_time += (double) (solver_end - solver_start) / CLOCKS_PER_SEC;
 
-		//store gain, kinetic, potential
+		//store gain, kinetic, potential, and other
 		write_to_data_files();
 
 		refactor_b<<<nblocks,nthreads>>>(dNe, dRi, bK_n);
