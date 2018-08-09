@@ -107,13 +107,20 @@ void Solver::optimize()
 
 };
 
+int Ny_for_Ly(double ly)
+{
+	if (ly < 4.0) return 128;
+	else if (ly < 20.0) return 256;
+	else return 512;
+};
+
 
 int main() {
 
 	int runs = 30;
 
-	double *Ly_arr = (double*) malloc(sizeof(double) * runs);
-	for (int i = 0; i < runs; i++) Ly_arr[i] = 2.0 + (i * 2.0);
+	double Ly_arr[runs] = {2.0,4.0,6.0,8.0,10.0,12.0,14.0,16.0,18.0,20.0,22.0,24.0,26.0,28.0,30.0,
+						32.0,34.0,36.0,38.0,40.0,42.0,44.0,46.0,48.0,50.0,52.0,54.0,56.0,58.0,60.0};
 
 	int nblocks = 128;
 	int nthreads = 512;
@@ -129,16 +136,18 @@ int main() {
 	double T = 1.0;
 	double dt = 0.01;
 
-	Solver solver(nblocks,nthreads,Nx,Ny,Nz,Lx,Ly_arr[0],Lz,Re,Ri,Pr,T,dt);
+	Solver solver(nblocks,nthreads,Nx,Ny_for_Ly(Ly_arr[0]),Nz,Lx,Ly_arr[0],Lz,Re,Ri,Pr,T,dt);
 
 	for (int i = 0; i < runs; i++) {
 
 		solver.optimize();
 
-		if (i != (runs-1)) solver.reset(nblocks,nthreads,Nx,Ny,Nz,Lx,Ly_arr[i+1],Lz,Re,Ri,Pr,T,dt);
+		if (i != (runs-1)) {
+			double ly = Ly_arr[i+1];
+			int ny = Ny_for_Ly(ly);
+			solver.reset(nblocks,nthreads,Nx,ny,Nz,Lx,ly,Lz,Re,Ri,Pr,T,dt);
+		}
 	}
-
-	free(Ly_arr);
 
 };
 
