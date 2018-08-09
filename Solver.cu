@@ -119,8 +119,8 @@ int main() {
 
 	int runs = 30;
 
-	double Ly_arr[runs] = {2.0,4.0,6.0,8.0,10.0,12.0,14.0,16.0,18.0,20.0,22.0,24.0,26.0,28.0,30.0,
-						32.0,34.0,36.0,38.0,40.0,42.0,44.0,46.0,48.0,50.0,52.0,54.0,56.0,58.0,60.0};
+	double *Ly_arr = (double*) malloc(sizeof(double) * runs);
+	for (int i = 0; i < runs; i++) Ly_arr[i] = 2.0 + (2.0 * i);
 
 	int nblocks = 128;
 	int nthreads = 512;
@@ -148,6 +148,8 @@ int main() {
 			solver.reset(nblocks,nthreads,Nx,ny,Nz,Lx,ly,Lz,Re,Ri,Pr,T,dt);
 		}
 	}
+
+	free(Ly_arr);
 
 };
 
