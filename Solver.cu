@@ -103,6 +103,8 @@ void Solver::optimize()
 	Solver::log("\tSOLVER::average time for adjoint_solve() = " + std::to_string(( (double) adjoint_time / its )));
 	Solver::log("\tSOLVER::optimize time elapsed = " + std::to_string(optimize_time));
 
+	write_opt_fields();
+
 	close_data_files();
 
 };
@@ -114,7 +116,29 @@ int Ny_for_Ly(double ly)
 	else return 512;
 };
 
+int main()
+{
+	int nblocks = 128;
+	int nthreads = 512;
+	int Nx = 64;
+	int Ny = 128;
+	int Nz = 32;
+	double Lx = 2.0;
+	double Ly = 4.0;
+	double Lz = 2.0;
+	double Re = 100.0;
+	double Ri = 1.0;
+	double Pr = 1.0;
+	double T = 1.0;
+	double dt = 0.01;
 
+	Solver solver(nblocks,nthreads,Nx,Ny,Nz,Lx,Ly,Lz,Re,Ri,Pr,T,dt);
+
+	solver.optimize();
+};
+
+
+/*
 int main() {
 
 	int runs = 30;
@@ -152,6 +176,6 @@ int main() {
 	free(Ly_arr);
 
 };
-
+*/
 
 

@@ -40,6 +40,8 @@ private:
 			double re, double ri, double pr,
 			double t, double delt,bool from_constructor);
 
+	void inverse_transform(cufftDoubleComplex *v1, cufftDoubleComplex *v2);
+
 	void direct_solve();
 	void adjoint_solve();
 	void direct_set_IC();
@@ -50,6 +52,7 @@ private:
 	void calc_energy();
 	void calc_residual();
 	void write_to_data_files();
+	void write_opt_fields();
 
 	void print(const char*);
 	void log(const std::string);
@@ -103,7 +106,18 @@ private:
 	std::ofstream potential_data_file;
 	std::ofstream uwUy_data_file;
 	std::ofstream wb_data_file;
+	std::ofstream opt_u_file;
+	std::ofstream opt_v_file;
+	std::ofstream opt_w_file;
+	std::ofstream opt_b_file;
 
+};
+
+void Solver::inverse_transform(cufftDoubleComplex *v1, cufftDoubleComplex *v2)
+{
+	zero_pad<<<nblocks,nthreads>>>(dNe, dNx, dNy, dNz, ikx, iky, ikz, v1);	
+	cufftSafeCall( cufftExecZ2Z(plan, v1, v2, CUFFT_INVERSE) );
+	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, v2);
 };
 
 void Solver::direct_solve()
@@ -134,11 +148,9 @@ void Solver::direct_solve()
 		//swapped old and new pointers
 
 		kx_scal<<<nblocks,nthreads>>>(dNe, uK_n, ikx, device_tmp1);
-		cufftSafeCall( cufftExecZ2Z(plan, device_tmp1, device_tmp1, CUFFT_INVERSE) );
-		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
+		inverse_transform(device_tmp1, device_tmp1);
 		full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, U, device_tmp1);
-		cufftSafeCall( cufftExecZ2Z(plan, vK_n, device_tmp2, CUFFT_INVERSE) );
-		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp2);
+		inverse_transform(vK_n, device_tmp2);
 		full_scal<<<nblocks,nthreads>>>(dNe, device_tmp2, Uy, device_tmp2);
 		add<<<nblocks,nthreads>>>(dNe, device_tmp1, device_tmp2, nluK_n);
 		cufftSafeCall( cufftExecZ2Z(plan, nluK_n, nluK_n, CUFFT_FORWARD) );
@@ -146,24 +158,21 @@ void Solver::direct_solve()
 		//setup nluK_n for next time step
 
 		kx_scal<<<nblocks,nthreads>>>(dNe, vK_n, ikx, device_tmp1);
-		cufftSafeCall( cufftExecZ2Z(plan, device_tmp1, device_tmp2, CUFFT_INVERSE) );
-		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp2);
+		inverse_transform(device_tmp1, device_tmp2);
 		full_scal<<<nblocks,nthreads>>>(dNe, device_tmp2, U, nlvK_n);
 		cufftSafeCall( cufftExecZ2Z(plan, nlvK_n, nlvK_n, CUFFT_FORWARD) );
 		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlvK_n);
 		//setup nlvK_n for next time step
 
 		kx_scal<<<nblocks,nthreads>>>(dNe, wK_n, ikx, device_tmp1);
-		cufftSafeCall( cufftExecZ2Z(plan, device_tmp1, device_tmp1, CUFFT_INVERSE) );
-		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
+		inverse_transform(device_tmp1, device_tmp1);
 		full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, U, nlwK_n);
 		cufftSafeCall( cufftExecZ2Z(plan, nlwK_n, nlwK_n, CUFFT_FORWARD) );
 		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlwK_n);
 		//setup nlwK_n for next time step
 
 		kx_scal<<<nblocks,nthreads>>>(dNe, bK_n, ikx, device_tmp1);
-		cufftSafeCall( cufftExecZ2Z(plan, device_tmp1, device_tmp1, CUFFT_INVERSE) );
-		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
+		inverse_transform(device_tmp1, device_tmp1);
 		full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, U, nlbK_n);
 		cufftSafeCall( cufftExecZ2Z(plan, nlbK_n, nlbK_n, CUFFT_FORWARD) );
 		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlbK_n);
@@ -172,21 +181,16 @@ void Solver::direct_solve()
 
 	}
 
-
-	cufftSafeCall( cufftExecZ2Z(plan, uK_n, uK_n, CUFFT_INVERSE) );
-	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, uK_n);
+	inverse_transform(uK_n, uK_n);
 	//set uK_n to real space solution
 
-	cufftSafeCall( cufftExecZ2Z(plan, vK_n, vK_n, CUFFT_INVERSE) );
-	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, vK_n);
+	inverse_transform(vK_n, vK_n);
 	//set vK_n to real space solution
 
-	cufftSafeCall( cufftExecZ2Z(plan, wK_n, wK_n, CUFFT_INVERSE) );
-	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, wK_n);
+	inverse_transform(wK_n, wK_n);
 	//set wK_n to real space solution
 
-	cufftSafeCall( cufftExecZ2Z(plan, bK_n, bK_n, CUFFT_INVERSE) );
-	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, bK_n);
+	inverse_transform(bK_n, bK_n);
 	//set bK_n to real space solution
 
 };
@@ -217,20 +221,17 @@ void Solver::adjoint_solve()
 		swap_solver_pointers();
 
 		kx_scal<<<nblocks,nthreads>>>(dNe, uK_n, ikx, device_tmp1);
-		cufftSafeCall( cufftExecZ2Z(plan, device_tmp1, device_tmp2, CUFFT_INVERSE) );
-		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp2);
+		inverse_transform(device_tmp1, device_tmp2);
 		full_scal<<<nblocks,nthreads>>>(dNe, device_tmp2, U, nluK_n);
 		negate<<<nblocks,nthreads>>>(dNe, nluK_n);
 		cufftSafeCall( cufftExecZ2Z(plan, nluK_n, nluK_n, CUFFT_FORWARD) );
 		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nluK_n);
 		//setup nluK_n for next time step
 
-		cufftSafeCall( cufftExecZ2Z(plan, device_tmp1, device_tmp1, CUFFT_INVERSE) );
-		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
+		inverse_transform(device_tmp1, device_tmp1);
 		full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, Uy, device_tmp2);
 		kx_scal<<<nblocks,nthreads>>>(dNe, vK_n, ikx, device_tmp1);
-		cufftSafeCall( cufftExecZ2Z(plan, device_tmp1, device_tmp1, CUFFT_INVERSE) );
-		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
+		inverse_transform(device_tmp1, device_tmp1);
 		full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, U, nlvK_n);
 		negate<<<nblocks,nthreads>>>(dNe, nlvK_n);
 		add<<<nblocks,nthreads>>>(dNe, nlvK_n, device_tmp2, nlvK_n);
@@ -239,8 +240,7 @@ void Solver::adjoint_solve()
 		//setup nlvK_n for next time step
 
 		kx_scal<<<nblocks,nthreads>>>(dNe, wK_n, ikx, device_tmp1);
-		cufftSafeCall( cufftExecZ2Z(plan, device_tmp1, device_tmp1, CUFFT_INVERSE) );
-		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
+		inverse_transform(device_tmp1, device_tmp1);
 		full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, U, nlwK_n);
 		negate<<<nblocks,nthreads>>>(dNe, nlwK_n);
 		cufftSafeCall( cufftExecZ2Z(plan, nlwK_n, nlwK_n, CUFFT_FORWARD) );
@@ -248,8 +248,7 @@ void Solver::adjoint_solve()
 		//setup nlwK_n for next time step
 
 		kx_scal<<<nblocks,nthreads>>>(dNe, bK_n, ikx, device_tmp1);
-		cufftSafeCall( cufftExecZ2Z(plan, device_tmp1, device_tmp1, CUFFT_INVERSE) );
-		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
+		inverse_transform(device_tmp1, device_tmp1);
 		full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, U, nlbK_n);
 		negate<<<nblocks,nthreads>>>(dNe, nlbK_n);
 		cufftSafeCall( cufftExecZ2Z(plan, nlbK_n, nlbK_n, CUFFT_FORWARD) );
@@ -259,20 +258,16 @@ void Solver::adjoint_solve()
 
 	}
 
-	cufftSafeCall( cufftExecZ2Z(plan, uK_n, uK_n, CUFFT_INVERSE) );
-	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, uK_n);
+	inverse_transform(uK_n, uK_n);
 	//set uK_n to real space solution
 
-	cufftSafeCall( cufftExecZ2Z(plan, vK_n, vK_n, CUFFT_INVERSE) );
-	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, vK_n);
+	inverse_transform(vK_n, vK_n);
 	//set vK_n to real space solution
 
-	cufftSafeCall( cufftExecZ2Z(plan, wK_n, wK_n, CUFFT_INVERSE) );
-	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, wK_n);
+	inverse_transform(wK_n, wK_n);
 	//set wK_n to real space solution
 
-	cufftSafeCall( cufftExecZ2Z(plan, bK_n, bK_n, CUFFT_INVERSE) );
-	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, bK_n);
+	inverse_transform(bK_n, bK_n);
 	//set bK_n to real space solution
 
 };
@@ -376,8 +371,7 @@ void Solver::reset(int blocks, int threads,
 			cufftSafeCall( cufftExecZ2Z(plan, U, device_tmp1, CUFFT_FORWARD) );
 			scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
 			ky_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, iky, Uy);
-			cufftSafeCall( cufftExecZ2Z(plan, Uy, Uy, CUFFT_INVERSE) );
-			scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, Uy);
+			inverse_transform(Uy, Uy);
 			
 		}
 
@@ -580,8 +574,7 @@ void Solver::set( int blocks, int threads,
 	cufftSafeCall( cufftExecZ2Z(plan, U, device_tmp1, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
 	ky_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, iky, Uy);
-	cufftSafeCall( cufftExecZ2Z(plan, Uy, Uy, CUFFT_INVERSE) );
-	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, Uy);
+	inverse_transform(Uy, Uy);
 	//U, Uy initialized on GPU
 
 };
@@ -664,8 +657,7 @@ void Solver::direct_set_IC()
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, uK_n);
 	cutilSafeCall( cudaMemcpy(uK_o, uK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
 	kx_scal<<<nblocks,nthreads>>>(dNe, uK_n, ikx, device_tmp2);
-	cufftSafeCall( cufftExecZ2Z(plan, device_tmp2, device_tmp2, CUFFT_INVERSE) );
-	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp2);
+	inverse_transform(device_tmp2, device_tmp2);
 	full_scal<<<nblocks,nthreads>>>(dNe, device_tmp2, U, device_tmp2);
 	add<<<nblocks,nthreads>>>(dNe, device_tmp1, device_tmp2, nluK_n);
 	cufftSafeCall( cufftExecZ2Z(plan, nluK_n, nluK_n, CUFFT_FORWARD) );
@@ -677,8 +669,7 @@ void Solver::direct_set_IC()
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, vK_n);
 	cutilSafeCall( cudaMemcpy(vK_o, vK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
 	kx_scal<<<nblocks,nthreads>>>(dNe, vK_n, ikx, device_tmp1);
-	cufftSafeCall( cufftExecZ2Z(plan, device_tmp1, device_tmp1, CUFFT_INVERSE) );
-	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
+	inverse_transform(device_tmp1, device_tmp1);
 	full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, U, nlvK_n);
 	cufftSafeCall( cufftExecZ2Z(plan, nlvK_n, nlvK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlvK_n);
@@ -689,8 +680,7 @@ void Solver::direct_set_IC()
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, wK_n);
 	cutilSafeCall( cudaMemcpy(wK_o, wK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
 	kx_scal<<<nblocks,nthreads>>>(dNe, wK_n, ikx, device_tmp1);
-	cufftSafeCall( cufftExecZ2Z(plan, device_tmp1, device_tmp1, CUFFT_INVERSE) );
-	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
+	inverse_transform(device_tmp1, device_tmp1);
 	full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, U, nlwK_n);
 	cufftSafeCall( cufftExecZ2Z(plan, nlwK_n, nlwK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlwK_n);
@@ -701,8 +691,7 @@ void Solver::direct_set_IC()
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, bK_n);
 	cutilSafeCall( cudaMemcpy(bK_o, bK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
 	kx_scal<<<nblocks,nthreads>>>(dNe, bK_n, ikx, device_tmp1);
-	cufftSafeCall( cufftExecZ2Z(plan, device_tmp1, device_tmp1, CUFFT_INVERSE) );
-	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
+	inverse_transform(device_tmp1, device_tmp1);
 	full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, U, nlbK_n);
 	cufftSafeCall( cufftExecZ2Z(plan, nlbK_n, nlbK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlbK_n);
@@ -724,8 +713,7 @@ void Solver::adjoint_set_IC()
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, vK_n);
 	cutilSafeCall( cudaMemcpy(vK_o, vK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
 	kx_scal<<<nblocks,nthreads>>>(dNe, vK_n, ikx, device_tmp2);
-	cufftSafeCall( cufftExecZ2Z(plan, device_tmp2, device_tmp2, CUFFT_INVERSE) );
-	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp2);
+	inverse_transform(device_tmp2, device_tmp2);
 	full_scal<<<nblocks,nthreads>>>(dNe, device_tmp2, U, device_tmp2);
 	negate<<<nblocks,nthreads>>>(dNe, device_tmp2);
 	add<<<nblocks,nthreads>>>(dNe, device_tmp1, device_tmp2, nlvK_n);
@@ -738,8 +726,7 @@ void Solver::adjoint_set_IC()
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, uK_n);
 	cutilSafeCall( cudaMemcpy(uK_o, uK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
 	kx_scal<<<nblocks,nthreads>>>(dNe, uK_n, ikx, device_tmp1);
-	cufftSafeCall( cufftExecZ2Z(plan, device_tmp1, device_tmp1, CUFFT_INVERSE) );
-	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
+	inverse_transform(device_tmp1, device_tmp1);
 	full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, U, nluK_n);
 	negate<<<nblocks,nthreads>>>(dNe, nluK_n);
 	cufftSafeCall( cufftExecZ2Z(plan, nluK_n, nluK_n, CUFFT_FORWARD) );
@@ -751,8 +738,7 @@ void Solver::adjoint_set_IC()
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, wK_n);
 	cutilSafeCall( cudaMemcpy(wK_o, wK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
 	kx_scal<<<nblocks,nthreads>>>(dNe, wK_n, ikx, device_tmp1);
-	cufftSafeCall( cufftExecZ2Z(plan, device_tmp1, device_tmp1, CUFFT_INVERSE) );
-	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
+	inverse_transform(device_tmp1, device_tmp1);
 	full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, U, nlwK_n);
 	negate<<<nblocks,nthreads>>>(dNe, nlwK_n);
 	cufftSafeCall( cufftExecZ2Z(plan, nlwK_n, nlwK_n, CUFFT_FORWARD) );
@@ -764,8 +750,7 @@ void Solver::adjoint_set_IC()
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, bK_n);
 	cutilSafeCall( cudaMemcpy(bK_o, bK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
 	kx_scal<<<nblocks,nthreads>>>(dNe, bK_n, ikx, device_tmp1);
-	cufftSafeCall( cufftExecZ2Z(plan, device_tmp1, device_tmp1, CUFFT_INVERSE) );
-	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
+	inverse_transform(device_tmp1, device_tmp1);
 	full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, U, nlbK_n);
 	negate<<<nblocks,nthreads>>>(dNe, nlbK_n);
 	cufftSafeCall( cufftExecZ2Z(plan, nlbK_n, nlbK_n, CUFFT_FORWARD) );
@@ -891,6 +876,10 @@ void Solver::init_data_files()
 	potential_data_file.open("./data/potential_" + flag + ".txt");
 	uwUy_data_file.open("./data/uwUy_" + flag + ".txt");
 	wb_data_file.open("./data/wb_" + flag + ".txt");
+	opt_u_file.open("./data/opt_u_" + flag + ".txt");
+	opt_v_file.open("./data/opt_v_" + flag + ".txt");
+	opt_w_file.open("./data/opt_w_" + flag + ".txt");
+	opt_b_file.open("./data/opt_b_" + flag + ".txt");
 };
 
 void Solver::close_data_files()
@@ -900,12 +889,19 @@ void Solver::close_data_files()
 	potential_data_file.flush();
 	uwUy_data_file.flush();
 	wb_data_file.flush();
+	opt_u_file.flush();
+	opt_v_file.flush();
+	opt_w_file.flush();
+	opt_b_file.flush();
 
 	gain_data_file.close();
 	kinetic_data_file.close();
 	potential_data_file.close();
 	uwUy_data_file.close();
 	wb_data_file.close();
+	opt_u_file.close();
+	opt_v_file.close();
+	opt_w_file.close();
 };
 
 void Solver::write_to_data_files()
@@ -953,6 +949,17 @@ void Solver::write_to_data_files()
 	value *= (Ri / Ne);
 	wb_data_file << (value / energy) << std::endl;
 
+};
+
+void Solver::write_opt_fields()
+{
+	//write u,v,w,b
+	for (int i = 0; i < Ne; i++) {
+		opt_u_file << uR_o[i].x << std::endl;
+		opt_v_file << vR_o[i].x << std::endl;
+		opt_w_file << wR_o[i].x << std::endl;
+		opt_b_file << bR_o[i].x << std::endl;
+	}
 };
 
 

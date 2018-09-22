@@ -20,6 +20,30 @@
 #include "cutil.h"
 #include "cutil_inline_runtime.h"
 
+__global__
+void zero_pad(int *dNe, int *dNx, int *dNy, int *dNz, double *ikx, double *iky, double *ikz, cufftDoubleComplex *u) {
+	int ind = threadIdx.x + blockIdx.x * blockDim.x;
+	while (ind < *dNe) {
+		double wave = ikx[ind];
+		if ((wave > *dNx/3.0 && wave <= (*dNx/2.0 - 1.0)) || (wave >= (1.0 - *dNx/2.0) && wave < -*dNx/3.0)) {
+			u[ind].x = 0.0;
+			u[ind].y = 0.0;
+			continue;
+		}
+		wave = iky[ind];
+		if ((wave > *dNy/3.0 && wave <= (*dNy/2.0 - 1.0)) || (wave >= (1.0 - *dNy/2.0) && wave < -*dNy/3.0)) {
+			u[ind].x = 0.0;
+			u[ind].y = 0.0;
+			continue;
+		}
+		wave = ikz[ind];
+		if ((wave > *dNz/3.0 && wave <= (*dNz/2.0 - 1.0)) || (wave >= (1.0 - *dNz/2.0) && wave < -*dNz/3.0)) {
+			u[ind].x = 0.0;
+			u[ind].y = 0.0;
+		}
+	}
+};
+
 __global__ 
 void cuDC_init(int *dNe, cufftDoubleComplex* u) {
 	int ind = threadIdx.x + blockIdx.x * blockDim.x;
