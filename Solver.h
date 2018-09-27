@@ -78,6 +78,7 @@ private:
 	double *energy_reduce, *residual_reduce;
 	cufftDoubleComplex *uR_o, *vR_o, *wR_o, *bR_o;
 
+
 	//gpu
 	bool *danynan;
 	int *dNx,*dNy,*dNz,*dNe;
@@ -85,9 +86,10 @@ private:
 	double *dRe,*dRi,*dPr;
 	double *dLy;
 	double *ddt;
-	cufftDoubleComplex *U,*Uy;
+	cufftDoubleComplex *U,*Uy,*Uyy;
 	cufftDoubleComplex *uK_o,*uK_n,*vK_o,*vK_n,*wK_o,*wK_n,*bK_o,*bK_n;
 	cufftDoubleComplex *nluK_o,*nluK_n,*nlvK_n,*nlvK_o,*nlwK_n,*nlwK_o,*nlbK_o,*nlbK_n;
+	cufftDoubleComplex *nlpK_n,*nlpK_o;
 	cufftDoubleComplex *uestK,*vestK,*westK;
 	double *ix, *iy, *iz;
 	double *ikx,*iky,*ikz;
@@ -132,7 +134,8 @@ void Solver::direct_solve()
 		direct_compute_1<<<nblocks,nthreads>>>(dNe, dRe, dPr, ddt, bK_o, bK_n, nlbK_o, nlbK_n, wK_n, ikx, iky, ikz);
 
 		//using device_tmp1 instead of pestK to save memory on GPU (compute 2 and 3)
-		direct_compute_2<<<nblocks,nthreads>>>(dNe, nluK_n, nluK_o, nlvK_n, nlvK_o, nlwK_n, nlwK_o, bK_o, device_tmp1, ikx, iky, ikz);
+		//direct_compute_2<<<nblocks,nthreads>>>(dNe, nluK_n, nluK_o, nlvK_n, nlvK_o, nlwK_n, nlwK_o, bK_o, device_tmp1, ikx, iky, ikz);
+		direct_compute_2<<<nblocks,nthreads>>>(dNe, device_tmp1, nlpK_n, nlpK_o, bK_o, ikx, iky, ikz);
 
 		direct_compute_3<<<nblocks,nthreads>>>(dNe, dRe, dRi, ddt, uK_n, uK_o, vK_n, vK_o, wK_n, wK_o, nluK_n,
 												nluK_o, nlvK_n, nlvK_o, nlwK_n, nlwK_o, device_tmp1, bK_o,
@@ -178,6 +181,14 @@ void Solver::direct_solve()
 		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlbK_n);
 		//setup nlbK_n for next time step
 
+		inverse_transform(vK_n, device_tmp1);
+		real_scale<<<nblocks,nthreads>>>(dNe, 2.0, device_tmp1);
+		full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, Uy, nlpK_n);
+		cufftSafeCall( cufftExecZ2Z(plan, nlpK_n, nlpK_n, CUFFT_FORWARD) );
+		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlpK_n);
+		//setup nlpK_n for next time step
+		
+
 
 	}
 
@@ -207,7 +218,8 @@ void Solver::adjoint_solve()
 		adjoint_compute_1<<<nblocks,nthreads>>>(dNe, dRe, dPr, dRi, ddt, bK_o, bK_n, nlbK_o, nlbK_n, wK_n, ikx, iky, ikz);
 
 		//using device_tmp1 instead of pestK to save memory on GPU (compute 2 and 3)
-		direct_compute_2<<<nblocks,nthreads>>>(dNe, nluK_n, nluK_o, nlvK_n, nlvK_o, nlwK_n, nlwK_o, bK_o, device_tmp1, ikx, iky, ikz);
+		//direct_compute_2<<<nblocks,nthreads>>>(dNe, nluK_n, nluK_o, nlvK_n, nlvK_o, nlwK_n, nlwK_o, bK_o, device_tmp1, ikx, iky, ikz);
+		direct_compute_2<<<nblocks,nthreads>>>(dNe, device_tmp1, nlpK_n, nlpK_o, bK_o, ikx, iky, ikz);
 
 		adjoint_compute_3<<<nblocks,nthreads>>>(dNe, dRe, ddt, uK_n, uK_o, vK_n, vK_o, wK_n, wK_o, nluK_n,
 												nluK_o, nlvK_n, nlvK_o, nlwK_n, nlwK_o, device_tmp1, bK_o,
@@ -255,6 +267,18 @@ void Solver::adjoint_solve()
 		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlbK_n);
 		//setup nlbK_n for next time step
 
+		inverse_transform(vK_n, device_tmp1);
+		ky_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, iky, device_tmp2);
+		kx_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, ikx, device_tmp1);
+		full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, Uy, device_tmp1);
+		full_scal<<<nblocks,nthreads>>>(dNe, device_tmp2, Uy, device_tmp2);
+		add<<<nblocks,nthreads>>>(dNe, device_tmp1, device_tmp2, device_tmp2);
+		inverse_transform(uK_n, device_tmp1);
+		full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, Uyy, device_tmp1);
+		add<<<nblocks,nthreads>>>(dNe, device_tmp1, device_tmp2, nlpK_n);
+		cufftSafeCall( cufftExecZ2Z(plan, nlpK_n, nlpK_n, CUFFT_FORWARD) );
+		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlpK_n);
+		//setup nlpK_n for next time step
 
 	}
 
@@ -366,12 +390,14 @@ void Solver::reset(int blocks, int threads,
 			free(kyy);
 			free(kzz);
 
-			//reset U and Uy with the new indicies
+			//reset U and Uy and Uyy with the new indicies
 			init_shear<<<nblocks,nthreads>>>(dNe, dLy, iy, U);
 			cufftSafeCall( cufftExecZ2Z(plan, U, device_tmp1, CUFFT_FORWARD) );
 			scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
 			ky_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, iky, Uy);
+			ky_scal<<<nblocks,nthreads>>>(dNe, Uy, iky, Uyy);
 			inverse_transform(Uy, Uy);
+			inverse_transform(Uyy, Uyy);
 			
 		}
 
@@ -531,6 +557,7 @@ void Solver::set( int blocks, int threads,
 
 	cutilSafeCall( cudaMalloc( (void**)&U, sizeof(cufftDoubleComplex) * Ne) );
 	cutilSafeCall( cudaMalloc( (void**)&Uy, sizeof(cufftDoubleComplex) * Ne) );
+	cutilSafeCall( cudaMalloc( (void**)&Uyy), sizeof(cufftDoubleComplex) * Ne) );
 
 	cutilSafeCall( cudaMalloc( (void**)&uK_o, sizeof(cufftDoubleComplex) * Ne) );
 	cutilSafeCall( cudaMalloc( (void**)&uK_n, sizeof(cufftDoubleComplex) * Ne) );
@@ -549,6 +576,9 @@ void Solver::set( int blocks, int threads,
 	cutilSafeCall( cudaMalloc( (void**)&nlwK_n, sizeof(cufftDoubleComplex) * Ne) );
 	cutilSafeCall( cudaMalloc( (void**)&nlbK_o, sizeof(cufftDoubleComplex) * Ne) );
 	cutilSafeCall( cudaMalloc( (void**)&nlbK_n, sizeof(cufftDoubleComplex) * Ne) );
+
+	cutilSafeCall( cudaMalloc( (void**)&nlpK_n, sizeof(cufftDoubleComplex) * Ne) );
+	cutilSafeCall( cudaMalloc( (void**)&nlpK_o, sizeof(cufftDoubleComplex) * Ne) );
 
 	cutilSafeCall( cudaMalloc( (void**)&uestK, sizeof(cufftDoubleComplex) * Ne) );
 	cutilSafeCall( cudaMalloc( (void**)&vestK, sizeof(cufftDoubleComplex) * Ne) );
@@ -574,8 +604,10 @@ void Solver::set( int blocks, int threads,
 	cufftSafeCall( cufftExecZ2Z(plan, U, device_tmp1, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
 	ky_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, iky, Uy);
+	ky_scal<<<nblocks,nthreads>>>(dNe, Uy, iky, Uyy);
 	inverse_transform(Uy, Uy);
-	//U, Uy initialized on GPU
+	inverse_transform(Uyy, Uyy);
+	//U, Uy, Uyy initialized on GPU
 
 };
 
@@ -586,6 +618,7 @@ void Solver::destroy(bool from_destructor) {
 
 	cutilSafeCall( cudaFree(U) );
 	cutilSafeCall( cudaFree(Uy) );
+	cutilSafeCall( cudaFree(Uyy) );
 
 	cutilSafeCall( cudaFree(uK_o) );
 	cutilSafeCall( cudaFree(uK_n) );
@@ -604,6 +637,9 @@ void Solver::destroy(bool from_destructor) {
 	cutilSafeCall( cudaFree(nlwK_n) );
 	cutilSafeCall( cudaFree(nlbK_o) );
 	cutilSafeCall( cudaFree(nlbK_n) );
+
+	cutilSafeCall( cudaFree(nlpK_n) );
+	cutilSafeCall( cudaFree(nlpK_o) );
 
 	cutilSafeCall( cudaFree(uestK) );
 	cutilSafeCall( cudaFree(vestK) );
@@ -698,6 +734,14 @@ void Solver::direct_set_IC()
 	cutilSafeCall( cudaMemcpy(nlbK_o, nlbK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
 	//bK_n, bK_o, nlbK_n, nlbK_o are ready
 
+	inverse_transform(vK_n, device_tmp1);
+	real_scale<<<nblocks,nthreads>>>(dNe, 2.0, device_tmp1);
+	full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, Uy, device_tmp1);
+	cufftSafeCall( cufftExecZ2Z(plan, device_tmp1, nlpK_n, CUFFT_FORWARD) );
+	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlpK_n);
+	cutilSafeCall( cudaMemcpy(nlpK_o, nlpK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
+	//nlpK_o, nlpK_n are ready
+
 	cuDC_init<<<nblocks,nthreads>>>(dNe, uestK);
 	cuDC_init<<<nblocks,nthreads>>>(dNe, vestK);
 	cuDC_init<<<nblocks,nthreads>>>(dNe, westK);
@@ -758,6 +802,21 @@ void Solver::adjoint_set_IC()
 	cutilSafeCall( cudaMemcpy(nlbK_o, nlbK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
 	//bK_n, bK_o, nlbK_n, nlbK_o are ready
 
+	kx_scal<<<nblocks,nthreads>>>(dNe, vK_n, ikx, device_tmp1);
+	ky_scal<<<nblocks,nthreads>>>(dNe, vK_n, iky, device_tmp2);
+	inverse_transform(device_tmp1, device_tmp1);
+	inverse_transform(device_tmp2, device_tmp2);
+	full_scal<<<nblocks,nthreads>>>(dNe, device_tmp2, Uy, device_tmp2);
+	full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, Uy, device_tmp1);
+	add<<<nblocks,nthreads>>>(dNe, device_tmp1, device_tmp2, device_tmp2);
+	inverse_transform(uK_n, device_tmp1);
+	full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, Uyy, device_tmp1);
+	add<<<nblocks,nthreads>>>(device_tmp1, device_tmp2, nlpK_n);
+	cutilSafeCall( cufftExecZ2Z(plan, nlpK_n, nlpK_n, CUFFT_FORWARD) );
+	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlpK_n);
+	cutilSafeCall( cudaMemcpy(nlpK_o, nlpK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
+	//nlpK_n, nlpK_o are ready
+
 	cuDC_init<<<nblocks,nthreads>>>(dNe, uestK);
 	cuDC_init<<<nblocks,nthreads>>>(dNe, vestK);
 	cuDC_init<<<nblocks,nthreads>>>(dNe, westK);
@@ -802,6 +861,10 @@ void Solver::swap_solver_pointers() {
 	tmp = nlbK_n;
 	nlbK_n = nlbK_o;
 	nlbK_o = tmp;
+
+	tmp = nlpK_n;
+	nlpK_n = nlpK_o;
+	nlpK_o = tmp;
 
 };
 

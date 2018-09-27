@@ -148,6 +148,7 @@ void adjoint_compute_1( int *dNe, double *dRe, double *dPr, double *dRi, double 
 	}
 };
 
+/*
 __global__
 void direct_compute_2(  int *dNe, cufftDoubleComplex *nluK_n, cufftDoubleComplex *nluK_o,
 						cufftDoubleComplex *nlvK_n, cufftDoubleComplex *nlvK_o,
@@ -164,6 +165,20 @@ void direct_compute_2(  int *dNe, cufftDoubleComplex *nluK_n, cufftDoubleComplex
 		pestK[ind].y = (-2.0*(ikx[ind]*nluK_n[ind].x + iky[ind]*nlvK_n[ind].x + ikz[ind]*nlwK_n[ind].x)
 						+ (ikx[ind]*nluK_o[ind].x + iky[ind]*nlvK_o[ind].x + ikz[ind]*nlwK_o[ind].x)
 						- (ikz[ind]*bK_o[ind].x))/factor;
+		ind+= blockDim.x * gridDim.x;
+	}
+};
+*/
+//TODO: make sure this new direct_compute_2 is correct
+__global__
+void direct_compute_2(int *dNe, cufftDoubleComplex *pestK, cufftDoubleComplex *nlpK_n, cufftDoubleComplex *nlpK_o, 
+						cufftDoubleComplex *bK_o, double *ikx, double *iky, double *ikz)
+{
+	int ind = threadIdx.x + blockIdx.x * blockDim.x;
+	while (ind < *dNe) {
+		double factor = ikx[ind]*ikx[ind] + iky[ind]*iky[ind] + ikz[ind]*ikz[ind] + 0.1e13;
+		pestK[ind].x = (2.0 * nlpK_n[ind].x - nlpK_o[ind].x - (-ikz[ind] * bK_o[ind].y))/factor;
+		pestK[ind].y = (2.0 * nlpK_n[ind].y - nlpK_o[ind].y - (ikz[ind] * bK_o[ind].x))/factor;
 		ind+= blockDim.x * gridDim.x;
 	}
 };
@@ -536,6 +551,17 @@ void init_IC(int *dNe, double *ix, double *iy, double *iz,
 		v[ind] = (cufftDoubleComplex) make_double2(2.0/sqrt(3.0)*sin(-2.0*PI/3.0)*cos(ix[ind])*sin(iy[ind])*cos(iz[ind]),0.0);
 		w[ind] = (cufftDoubleComplex) make_double2(2.0/sqrt(3.0)*sin(0.0)*cos(ix[ind])*cos(iy[ind])*sin(iz[ind]),0.0);
 		b[ind] = (cufftDoubleComplex) make_double2(1.0,0.0);
+		ind+= blockDim.x * gridDim.x;
+	}
+};
+
+__global__
+void real_scale(int *dNe, double factor, cufftDoubleComplex *u)
+{
+	int ind = threadIdx.x + blockIdx.x * blockDim.x;
+	while (ind < *dNe) {
+		u[ind].x *= factor;
+		u[ind].y *= factor;
 		ind+= blockDim.x * gridDim.x;
 	}
 };
