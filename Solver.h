@@ -131,6 +131,8 @@ void Solver::direct_solve()
 	int i;
 	for (i = 0; i < Nt; i++) {
 
+		checkNanAll("begin direct solve iteration");
+
 		direct_compute_1<<<nblocks,nthreads>>>(dNe, dRe, dPr, ddt, bK_o, bK_n, nlbK_o, nlbK_n, wK_n, ikx, iky, ikz);
 
 		//using device_tmp1 instead of pestK to save memory on GPU (compute 2 and 3)
@@ -188,7 +190,7 @@ void Solver::direct_solve()
 		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlpK_n);
 		//setup nlpK_n for next time step
 		
-
+		checkNanAll("end direct solve iteration");
 
 	}
 
@@ -214,6 +216,8 @@ void Solver::adjoint_solve()
 	int Nt = (int) floor(T / dt);
 	int i;
 	for (i = 0; i < Nt; i++) {
+
+		checkNanAll("begin adjoint solve iteration");
 
 		adjoint_compute_1<<<nblocks,nthreads>>>(dNe, dRe, dPr, dRi, ddt, bK_o, bK_n, nlbK_o, nlbK_n, wK_n, ikx, iky, ikz);
 
@@ -279,6 +283,8 @@ void Solver::adjoint_solve()
 		cufftSafeCall( cufftExecZ2Z(plan, nlpK_n, nlpK_n, CUFFT_FORWARD) );
 		scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlpK_n);
 		//setup nlpK_n for next time step
+
+		checkNanAll("end adjoint solve iteration");
 
 	}
 
@@ -486,6 +492,8 @@ void Solver::set( int blocks, int threads,
 	cutilSafeCall( cudaMemcpy(dLy, &Ly, sizeof(double), cudaMemcpyHostToDevice) );
 	cutilSafeCall( cudaMemcpy(ddt, &dt, sizeof(double), cudaMemcpyHostToDevice) );
 	cutilSafeCall( cudaMemcpy(danynan, &anynan, sizeof(bool), cudaMemcpyHostToDevice) );
+
+	//std::cout << "copied single values to GPU memory" << std::endl;
 	//copied single values to GPU memory
 
 	double *kxx,*kyy,*kzz,*dkx,*dky,*dkz;
@@ -552,12 +560,14 @@ void Solver::set( int blocks, int threads,
 	free(kxx);
 	free(kyy);
 	free(kzz);
+
+	//std::cout << "grid memory copied GPU" << std::endl;
 	//grid memory copied GPU
 
 
 	cutilSafeCall( cudaMalloc( (void**)&U, sizeof(cufftDoubleComplex) * Ne) );
 	cutilSafeCall( cudaMalloc( (void**)&Uy, sizeof(cufftDoubleComplex) * Ne) );
-	cutilSafeCall( cudaMalloc( (void**)&Uyy), sizeof(cufftDoubleComplex) * Ne) );
+	cutilSafeCall( cudaMalloc( (void**)&Uyy, sizeof(cufftDoubleComplex) * Ne) );
 
 	cutilSafeCall( cudaMalloc( (void**)&uK_o, sizeof(cufftDoubleComplex) * Ne) );
 	cutilSafeCall( cudaMalloc( (void**)&uK_n, sizeof(cufftDoubleComplex) * Ne) );
@@ -598,6 +608,8 @@ void Solver::set( int blocks, int threads,
 	vR_o = (cufftDoubleComplex*) malloc(sizeof(cufftDoubleComplex) * Ne);
 	wR_o = (cufftDoubleComplex*) malloc(sizeof(cufftDoubleComplex) * Ne);
 	bR_o = (cufftDoubleComplex*) malloc(sizeof(cufftDoubleComplex) * Ne);
+
+	//std::cout << "CPU, GPU memory allocated" << std::endl;
 	//CPU, GPU memory allocated
 
 	init_shear<<<nblocks,nthreads>>>(dNe, dLy, iy, U);
@@ -605,8 +617,11 @@ void Solver::set( int blocks, int threads,
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, device_tmp1);
 	ky_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, iky, Uy);
 	ky_scal<<<nblocks,nthreads>>>(dNe, Uy, iky, Uyy);
+	//std::cout << "before inverse_transform(Uy, Uy)" << std::endl;
 	inverse_transform(Uy, Uy);
+	//std::cout << "before inverse_transform(Uyy, Uyy)" << std::endl;
 	inverse_transform(Uyy, Uyy);
+	//std::cout << "U, Uy, Uyy initialized on GPU" << std::endl;
 	//U, Uy, Uyy initialized on GPU
 
 };
@@ -811,8 +826,8 @@ void Solver::adjoint_set_IC()
 	add<<<nblocks,nthreads>>>(dNe, device_tmp1, device_tmp2, device_tmp2);
 	inverse_transform(uK_n, device_tmp1);
 	full_scal<<<nblocks,nthreads>>>(dNe, device_tmp1, Uyy, device_tmp1);
-	add<<<nblocks,nthreads>>>(device_tmp1, device_tmp2, nlpK_n);
-	cutilSafeCall( cufftExecZ2Z(plan, nlpK_n, nlpK_n, CUFFT_FORWARD) );
+	add<<<nblocks,nthreads>>>(dNe, device_tmp1, device_tmp2, nlpK_n);
+	cufftSafeCall( cufftExecZ2Z(plan, nlpK_n, nlpK_n, CUFFT_FORWARD) );
 	scale_fft<<<nblocks,nthreads>>>(dNe, dsNe, nlpK_n);
 	cutilSafeCall( cudaMemcpy(nlpK_o, nlpK_n, sizeof(cufftDoubleComplex) * Ne, cudaMemcpyDeviceToDevice) );
 	//nlpK_n, nlpK_o are ready
@@ -881,7 +896,7 @@ void Solver::checkNan(const char* name, cufftDoubleComplex* v)
 
 void Solver::checkNanAll(const char * msg)
 {
-	print(msg);
+	//print(msg);
 	checkNan("uK_n",uK_n);
 	checkNan("uK_o",uK_o);
 	checkNan("vK_n",vK_n);
@@ -911,8 +926,9 @@ void Solver::print(const char* msg) {
 };
 
 void Solver::log(const std::string msg) {
+	log_file << msg << std::endl;
 	if (verbose)
-		log_file << msg << std::endl;
+		std::cout << msg << std::endl;
 };
 
 void Solver::log_begin_optimize()

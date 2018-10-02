@@ -41,6 +41,7 @@ void zero_pad(int *dNe, int *dNx, int *dNy, int *dNz, double *ikx, double *iky, 
 			u[ind].x = 0.0;
 			u[ind].y = 0.0;
 		}
+		ind+= blockDim.x * gridDim.x;
 	}
 };
 

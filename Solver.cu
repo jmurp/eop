@@ -116,6 +116,7 @@ int Ny_for_Ly(double ly)
 	else return 512;
 };
 
+/*
 int main()
 {
 	int nblocks = 128;
@@ -134,14 +135,18 @@ int main()
 
 	Solver solver(nblocks,nthreads,Nx,Ny,Nz,Lx,Ly,Lz,Re,Ri,Pr,T,dt);
 
+	std::cout << "past constructor, about to call optimize" << std::endl;
+
 	solver.optimize();
 };
+*/
 
 
-/*
+
+
 int main() {
 
-	int runs = 30;
+	int runs = 10;
 
 	double *Ly_arr = (double*) malloc(sizeof(double) * runs);
 	for (int i = 0; i < runs; i++) Ly_arr[i] = 2.0 + (2.0 * i);
@@ -176,6 +181,6 @@ int main() {
 	free(Ly_arr);
 
 };
-*/
+
 
 
