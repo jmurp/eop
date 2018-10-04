@@ -146,7 +146,7 @@ int main()
 
 int main() {
 
-	int runs = 10;
+	int runs = 1;
 
 	double *Ly_arr = (double*) malloc(sizeof(double) * runs);
 	for (int i = 0; i < runs; i++) Ly_arr[i] = 2.0 + (2.0 * i);

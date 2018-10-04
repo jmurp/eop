@@ -59,6 +59,7 @@ private:
 	void log_begin_optimize();
 	void init_data_files();
 	void close_data_files();
+	std::string zeropad_number(int n);
 
 //member variables
 
@@ -945,10 +946,25 @@ void Solver::log_begin_optimize()
 	log(ss.str());
 };
 
+std::string Solver::zeropad_number(int n)
+{
+	std::stringstream ss;
+	ss << n;
+	std::string str;
+	ss >> str;
+
+	int len = str.length();
+	for (int i = 0; i < 4 - len; i++) {
+		str = "0" + str;
+	}
+	return str;
+};
+
+
 void Solver::init_data_files()
 {
 	std::stringstream ss;
-	ss << time_stamp << "_" << (++optimize_count);
+	ss << time_stamp << "_" << zeropad_number(++optimize_count);
 	std::string flag = ss.str();
 	gain_data_file.open("./data/gain_" + flag + ".txt");
 	kinetic_data_file.open("./data/kinetic_" + flag + ".txt");
